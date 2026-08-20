@@ -117,7 +117,7 @@ ul{
   <section>
     <h2>1. このビューアについて</h2>
     <p>
-      KB Gerber Viewerは、Fusion 360 Electronics / EAGLE系のCAM出力を主な対象とした、
+      KB Gerber Viewerは、Fusion 360 Electronics / EAGLE系、及びKiCadから出力されたGerber / Excellonデータを主な対象とした、
       Gerber ZIP確認用のブラウザベースのビューアです。
     </p>
     <p>
@@ -129,8 +129,9 @@ ul{
 
   <section>
     <h2>2. 対応形式</h2>
-    <p>主にFusion 360 Electronics / EAGLE系のCAM出力を想定しています。</p>
-    <p>KiCad等で出力したGerber ZIPについては、製作者側で検証していないため正しく判定できない場合があります。</p>
+    <p>主にFusion 360 Electronics / EAGLE系、及びKiCadから出力されたGerber / Excellonデータを対象としています。</p>
+    <p>KiCadでは、「製造ファイルを生成」したGerber/DrillデータをZIP形式でまとめて読み込むことを想定しています。</p>
+    <p>KiCadの設計ファイル(.kicad_pcb等)を直接読み込むものではありません。</p>
     <ul>
       <li>Gerber RS-274X</li>
       <li>Excellon / NC Drill</li>
@@ -142,17 +143,18 @@ ul{
     </ul>
     <p class="small">
       ※現在のファイル判定は拡張子・ファイル名を中心に行っています。
-      Fusion側の出力設定やファイル名によっては正しく判定できない場合があります。
+      出力設定やファイル名によってはレイヤーを正しく判定・出力できない場合があります。
     </p>
   </section>
 
   <section>
-    <h2>3. 使用上の注意</h2>
+    <h2>3. 対応範囲について</h2>
 
     <div class="notice">
       <strong>重要：</strong>
-      本ビューアはGerberデータを確認するための補助ツールです。
-      表示結果が実際のPCB製造結果と完全に一致することを保証するものではありません。
+      本ビューアはAutodesk社のFusion 360 Electronics / EAGLE系、及びKiCadから出力されたGerber/Excellon ZIPを主な対象としています。<br>
+      その他のEDA/CAMソフトから出力されたGerberデータについても、標準的なGerber/Excellon形式であれば読み込める可能性がありますが、すべてのソフトウェア・出力設定との互換性を保証するものではありません。<br>
+      また、ファイル名や出力設定によっては、レイヤーを正しく分類・表示できない場合があります。
     </div>
 
     <h3>製造前の確認について</h3>
@@ -173,12 +175,6 @@ ul{
       表示に時間がかかったりする場合があります。
     </p>
 
-    <h3>対応範囲について</h3>
-    <p>
-      本ビューアは主にAutodesk社のFusion 360 Electronics / EAGLE由来のGerber ZIPを想定しています。
-      他のEDA/CAMソフトから出力したデータについては、ファイル名や出力設定によって
-      正常に分類・表示ができない可能性があります。
-    </p>
   </section>
 
   <section>
@@ -278,6 +274,7 @@ https://www.npmjs.com/package/gerber-to-svg
   <section>
     <h2>8. 更新履歴</h2>
     <p><strong>2026年08月20日</strong> — 初版の注意事項・ライセンスページを作成。</p>
+    <p><strong>2026年08月21日</strong> — KiCad出力のGerber/Excellon ZIPへの対応。対応形式・対応範囲の記載を更新。</p>
   </section>
 
   <div class="footer">

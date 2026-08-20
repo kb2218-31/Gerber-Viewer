@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KB Gerber Viewer - 無料ガーバーデータビューアー</title>
-<meta name="description"content="KB Gerber Viewerは、ガーバーデータをブラウザ上で確認できる無料のガーバーデータビューアーです。Autodesk社のFusion 360 Electronics / EAGLE系のGerber ZIPを主な対象としています。">
+<title>KB Gerber Viewer - 無料ガーバーデータビューアー（Fusion / KiCadに対応しました！）</title>
+<meta name="description"content="KB Gerber Viewerは、ガーバーデータをブラウザ上で確認できる無料のガーバーデータビューアーです。Autodesk社のFusion 360 Electronics / EAGLE系、およびKiCadのGerber / Excellon ZIPを主な対象としています。">
 <style>
 :root{
   color-scheme:dark;
@@ -334,9 +334,9 @@ if(typeof window.gerberToSvg!=="function"){
   <div class="header">
     <div>
       <div class="title">KB Gerber Viewer</div>
-      <div class="subtitle">Autodesk社のFusion 360 Electronics / EAGLE CAM 出力<br>
-        のZipファイルを想定して制作されています。</div>
-      <div class="subtitle">他ソフトとの互換性は完全には保証できません。</div>
+      <div class="subtitle">Autodesk社のFusion 360 Electronics / EAGLE CAM、KiCadの<br>
+        Gerber / Excellon出力ZIPを主な対象として制作されています。</div>
+      <div class="subtitle">KiCadでは「製造ファイルを生成」したGerber/Drill<br>出力に対応しています。</div>
     </div>
     <div class="controls">
       <a class="info-button" href="info.html">規約等</a>
@@ -491,7 +491,7 @@ async function readZip(file){
 
   // ZIP64を明示的に判定する
   if(entriesCount === 0xffff || centralOffset === 0xffffffff || centralSize === 0xffffffff){
-    throw new Error("ZIP64形式には対応していません。Fusionから通常のZIPとして再出力してください。");
+    throw new Error("ZIP64形式には対応していません。通常のZIPとして再出力してください。");
   }
 
   const out = [];
@@ -553,29 +553,120 @@ async function readZip(file){
 
 function classify(name, text){
   const base=escName(name).toUpperCase();
+  const stem=base.replace(/\.[^.]+$/,"");
+  const ext=(base.match(/\.([A-Z0-9]+)$/)||[])[1]||"";
   const attr=(text.match(/%IN([^*]+)\*%/i)||[])[1]||"";
-  const s=(base+" "+attr).toUpperCase();
+  const s=(base+" "+stem+" "+attr).toUpperCase();
 
-  if(/\.XLN$|\.DRL$/.test(base) || /DRILL|EXCELLON/.test(s))
+  /*
+   * KiCad can use both the traditional Gerber extensions (.GTL/.GBL/...)
+   * and generic .GBR files whose role is encoded in the filename:
+   *   F_Cu.gbr / B_Cu.gbr
+   *   F_Mask.gbr / B_Mask.gbr
+   *   F_Paste.gbr / B_Paste.gbr
+   *   F_Silkscreen.gto / B_Silkscreen.gbo
+   *   Edge_Cuts.gm1 / Edge_Cuts.gko
+   *
+   * Fusion/EAGLE naming remains supported as before.
+   */
+
+  // NC Drill / Excellon
+  if(
+    ext==="XLN" || ext==="DRL" ||
+    /\b(?:PTH|NPTH|DRILL|EXCELLON)\b/.test(s) ||
+    /(?:^|[_\-.])(?:PTH|NPTH|DRILL)(?:[_\-.]|$)/.test(stem)
+  ){
     return ["drill","Drill"];
-  if(/\.GTL$/.test(base) || /TOP\s*COPPER|TOP_COPPER/.test(s))
+  }
+
+  // Copper
+  if(
+    ext==="GTL" ||
+    /(?:^|[_\-.])F[_\-.]?CU(?:[_\-.]|$)/.test(stem) ||
+    /(?:^|[_\-.])TOP[_\-.]?(?:COPPER|CU)(?:[_\-.]|$)/.test(stem) ||
+    /TOP\s*COPPER|TOP_COPPER/.test(s)
+  ){
     return ["topCopper","Top Copper"];
-  if(/\.GBL$/.test(base) || /BOTTOM\s*COPPER|BOTTOM_COPPER/.test(s))
+  }
+
+  if(
+    ext==="GBL" ||
+    /(?:^|[_\-.])B[_\-.]?CU(?:[_\-.]|$)/.test(stem) ||
+    /(?:^|[_\-.])BOTTOM[_\-.]?(?:COPPER|CU)(?:[_\-.]|$)/.test(stem) ||
+    /BOTTOM\s*COPPER|BOTTOM_COPPER/.test(s)
+  ){
     return ["bottomCopper","Bottom Copper"];
-  if(/\.GTS$/.test(base) || /SOLDERMASK\s*TOP|TOP\s*MASK/.test(s))
+  }
+
+  // Solder mask
+  if(
+    ext==="GTS" ||
+    /(?:^|[_\-.])F[_\-.]?MASK(?:[_\-.]|$)/.test(stem) ||
+    /(?:^|[_\-.])TOP[_\-.]?(?:MASK|SOLDERMASK)(?:[_\-.]|$)/.test(stem) ||
+    /SOLDERMASK\s*TOP|TOP\s*MASK/.test(s)
+  ){
     return ["topMask","Top Solder Mask"];
-  if(/\.GBS$/.test(base) || /SOLDERMASK\s*BOTTOM|BOTTOM\s*MASK/.test(s))
+  }
+
+  if(
+    ext==="GBS" ||
+    /(?:^|[_\-.])B[_\-.]?MASK(?:[_\-.]|$)/.test(stem) ||
+    /(?:^|[_\-.])BOTTOM[_\-.]?(?:MASK|SOLDERMASK)(?:[_\-.]|$)/.test(stem) ||
+    /SOLDERMASK\s*BOTTOM|BOTTOM\s*MASK/.test(s)
+  ){
     return ["bottomMask","Bottom Solder Mask"];
-  if(/\.GTO$/.test(base) || /SILKSCREEN\s*TOP|TOP\s*SILK/.test(s))
+  }
+
+  // Silkscreen
+  if(
+    ext==="GTO" ||
+    /(?:^|[_\-.])F[_\-.]?(?:SILK|SILKS|SILKSCREEN)(?:[_\-.]|$)/.test(stem) ||
+    /(?:^|[_\-.])TOP[_\-.]?(?:SILK|SILKSCREEN)(?:[_\-.]|$)/.test(stem) ||
+    /SILKSCREEN\s*TOP|TOP\s*SILK/.test(s)
+  ){
     return ["topSilk","Top Silkscreen"];
-  if(/\.GBO$/.test(base) || /SILKSCREEN\s*BOTTOM|BOTTOM\s*SILK/.test(s))
+  }
+
+  if(
+    ext==="GBO" ||
+    /(?:^|[_\-.])B[_\-.]?(?:SILK|SILKS|SILKSCREEN)(?:[_\-.]|$)/.test(stem) ||
+    /(?:^|[_\-.])BOTTOM[_\-.]?(?:SILK|SILKSCREEN)(?:[_\-.]|$)/.test(stem) ||
+    /SILKSCREEN\s*BOTTOM|BOTTOM\s*SILK/.test(s)
+  ){
     return ["bottomSilk","Bottom Silkscreen"];
-  if(/\.GTP$/.test(base) || /SOLDERPASTE\s*TOP|TOP\s*PASTE/.test(s))
+  }
+
+  // Solder paste
+  if(
+    ext==="GTP" ||
+    /(?:^|[_\-.])F[_\-.]?PASTE(?:[_\-.]|$)/.test(stem) ||
+    /(?:^|[_\-.])TOP[_\-.]?PASTE(?:[_\-.]|$)/.test(stem) ||
+    /SOLDERPASTE\s*TOP|TOP\s*PASTE/.test(s)
+  ){
     return ["topPaste","Top Paste"];
-  if(/\.GBP$/.test(base) || /SOLDERPASTE\s*BOTTOM|BOTTOM\s*PASTE/.test(s))
+  }
+
+  if(
+    ext==="GBP" ||
+    /(?:^|[_\-.])B[_\-.]?PASTE(?:[_\-.]|$)/.test(stem) ||
+    /(?:^|[_\-.])BOTTOM[_\-.]?PASTE(?:[_\-.]|$)/.test(stem) ||
+    /SOLDERPASTE\s*BOTTOM|BOTTOM\s*PASTE/.test(s)
+  ){
     return ["bottomPaste","Bottom Paste"];
-  if(/\.GKO$/.test(base) || /BOARD\s*OUTLINE|OUTLINE/.test(s))
+  }
+
+  // Board outline. KiCad commonly plots Edge_Cuts.gm1.
+  if(
+    ext==="GKO" ||
+    ext==="GM1" ||
+    ext==="GML" ||
+    ext==="G1" ||
+    /(?:^|[_\-.])EDGE[_\-.]?CUTS?(?:[_\-.]|$)/.test(stem) ||
+    /(?:^|[_\-.])BOARD[_\-.]?(?:OUTLINE|EDGE)(?:[_\-.]|$)/.test(stem) ||
+    /BOARD\s*OUTLINE|EDGE[_\s]*CUTS|OUTLINE/.test(s)
+  ){
     return ["outline","Board Outline"];
+  }
 
   return null;
 }
@@ -694,7 +785,7 @@ function svgMeta(svgText){
 async function convertGerberLayer(layer){
   if(typeof window.gerberToSvg!=="function"){
     throw new Error(
-      "Gerber変換エンジンを読み込めませんでした。Edgeでインターネット接続を確認してください。"
+      "Gerber変換エンジンを読み込めませんでした。インターネット接続を確認してください。"
     );
   }
 
@@ -1432,7 +1523,7 @@ setStatus("ZIPを展開中…");
       const base=escName(entry.name);
       const ext=(base.match(/\.([A-Za-z0-9]+)$/)||[])[1]?.toUpperCase()||"";
 
-      if(!/^(GTL|GBL|GTS|GBS|GTO|GBO|GTP|GBP|GKO|XLN|DRL)$/.test(ext)){
+      if(!/^(GBR|GTL|GBL|GTS|GBS|GTO|GBO|GTP|GBP|GKO|GM1|GML|G1|XLN|DRL)$/.test(ext)){
         continue;
       }
 
@@ -1456,7 +1547,7 @@ setStatus("ZIPを展開中…");
 
     if(!next.length){
       throw new Error(
-        "Fusion形式のGerber / Drillファイルが見つかりませんでした。"
+        "対応形式のGerber / Drillファイルが見つかりませんでした。KiCadでは「製造ファイルを生成」からGerber / DrillをZIPにして読み込んでください。"
       );
     }
 
@@ -1469,7 +1560,7 @@ setStatus("ZIPを展開中…");
     ];
     next.sort((a,b)=>order.indexOf(a.type)-order.indexOf(b.type));
 
-    setStatus(`${next.length}レイヤーをRS-274X / Excellonエンジンで解析中…`);
+    setStatus(`${next.length}レイヤーをGerber / Excellonエンジンで解析中…`);
 
     for(const layer of next){
       try{
@@ -1721,10 +1812,7 @@ resizeCanvas();
 </html>
 <style>
 
-/* V6_LAYOUT_TUNING
-   ヘッダーをさらに圧縮し、レイヤーパネルとビューアの高さを
-   無理に揃えない。ビューア側を表示領域として優先する。
-*/
+
 .app{
   padding:6px 10px 8px;
 }
@@ -1785,8 +1873,6 @@ resizeCanvas();
   gap:10px;
 }
 
-/* Layers は内容確認に必要な高さだけ確保。
-   viewer-wrap は .layout の残り領域を最大限使用する。 */
 .sidebar{
   align-self:start;
   height:min(570px, calc(100vh - 145px));
@@ -1802,7 +1888,6 @@ resizeCanvas();
   min-height:0;
 }
 
-/* ヘッダーが広い環境では説明文を無駄に折り返さない */
 .header > div:first-child{
   min-width:0;
 }
@@ -1825,7 +1910,7 @@ resizeCanvas();
 </style>
 
 <style>
-/* V8: ヘッダー右側の空白をなくし、ビューアを可能な限り上へ */
+
 .app{
   padding:6px 10px 8px;
 }
@@ -1873,8 +1958,6 @@ resizeCanvas();
   gap:10px;
 }
 
-/* 左のレイヤー欄は独立した高さ。
-   右側ビューアは画面の残り全部を使う。 */
 .sidebar{
   align-self:start;
   height:min(570px, calc(100vh - 125px));
@@ -1887,7 +1970,6 @@ resizeCanvas();
   min-height:0;
 }
 
-/* 読み込んだファイル名はビューア上部のステータスへ寄せる */
 #loadedFile{
   max-width:34vw;
   overflow:hidden;
@@ -1916,8 +1998,7 @@ resizeCanvas();
 
 
 <style>
-/* V9_LAYOUT: 右側をGerber表示専用の主画面として確保。
-   左のLayersとは高さを独立させる。 */
+
 @media (min-width:1101px){
   .app{
     position:relative;
@@ -1976,7 +2057,6 @@ resizeCanvas();
     padding:6px 8px;
   }
 
-  /* Headerとは独立して配置し、右側ビューアを画面上端近くまで広げる */
   .layout{
     position:absolute;
     left:10px;
@@ -1990,8 +2070,6 @@ resizeCanvas();
     min-height:0;
   }
 
-  /* 左側の説明文の下にLayersを配置するためだけの余白。
-     ビューアには適用しない。 */
   .sidebar{
     align-self:start;
     margin-top:70px;
@@ -2015,7 +2093,6 @@ resizeCanvas();
     flex:0 0 auto;
   }
 
-  /* ファイル名はビューア上部のステータス列に表示 */
   #loadedFile{
     max-width:34vw;
     overflow:hidden;
