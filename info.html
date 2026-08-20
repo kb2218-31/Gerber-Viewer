@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KB Gerber Viewer - 使用上の注意・ライセンス</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:#fff;
+  color:#222;
+  font-family:system-ui,-apple-system,"Segoe UI","Yu Gothic",Meiryo,sans-serif;
+  line-height:1.75;
+}
+.wrap{
+  max-width:900px;
+  margin:0 auto;
+  padding:42px 22px 60px;
+}
+.header{
+  border-bottom:1px solid #ddd;
+  padding-bottom:18px;
+  margin-bottom:26px;
+}
+h1{
+  margin:0 0 6px;
+  font-size:28px;
+  font-weight:700;
+}
+.lead{
+  margin:0;
+  color:#666;
+  font-size:14px;
+}
+.nav{
+  margin-top:14px;
+}
+a{
+  color:#1756a9;
+}
+a.button{
+  display:inline-block;
+  padding:7px 11px;
+  border:1px solid #ccc;
+  border-radius:6px;
+  text-decoration:none;
+  color:#222;
+  background:#fff;
+}
+a.button:hover{
+  background:#f5f5f5;
+}
+section{
+  margin:0 0 24px;
+  padding:0 0 22px;
+  border-bottom:1px solid #e5e5e5;
+}
+section:last-of-type{
+  border-bottom:0;
+}
+h2{
+  margin:0 0 10px;
+  font-size:19px;
+}
+h3{
+  margin:17px 0 6px;
+  font-size:15px;
+}
+p{
+  margin:7px 0;
+}
+ul{
+  margin:7px 0 7px 1.25em;
+  padding:0;
+}
+.small{
+  color:#666;
+  font-size:13px;
+}
+.notice{
+  margin:12px 0;
+  padding:11px 13px;
+  border-left:3px solid #777;
+  background:#f7f7f7;
+}
+.license{
+  white-space:pre-wrap;
+  background:#f7f7f7;
+  border:1px solid #ddd;
+  border-radius:6px;
+  padding:14px;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:12px;
+  line-height:1.55;
+  overflow:auto;
+}
+.footer{
+  margin-top:22px;
+  color:#777;
+  font-size:12px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="header">
+    <div>
+      <h1>KB Gerber Viewer</h1>
+      <p class="lead">使用上の注意・対応形式・使用ライブラリ・ライセンス等</p>
+    </div>
+    <nav class="nav">
+      <a class="button" href="index.html">ビューアへ戻る</a>
+    </nav>
+  </header>
+
+  <section>
+    <h2>1. このビューアについて</h2>
+    <p>
+      KB Gerber Viewerは、Fusion 360 Electronics / EAGLE系のCAM出力を主な対象とした、
+      Gerber ZIP確認用のブラウザベースのビューアです。
+    </p>
+    <p>
+      GerberおよびNC Drillデータを読み込み、基板の表面・裏面表示、
+      配線確認、各レイヤーの表示切り替えなどの表示を行えます。
+    </p>
+
+  </section>
+
+  <section>
+    <h2>2. 対応形式</h2>
+    <p>主にFusion 360 Electronics / EAGLE系のCAM出力を想定しています。</p>
+    <p>KiCad等で出力したGerber ZIPについては、製作者側で検証していないため正しく判定できない場合があります。</p>
+    <ul>
+      <li>Gerber RS-274X</li>
+      <li>Excellon / NC Drill</li>
+      <li>Top / Bottom Copper</li>
+      <li>Top / Bottom Solder Mask</li>
+      <li>Top / Bottom Paste</li>
+      <li>Top / Bottom Silkscreen</li>
+      <li>Drill / Board Outline</li>
+    </ul>
+    <p class="small">
+      ※現在のファイル判定は拡張子・ファイル名を中心に行っています。
+      Fusion側の出力設定やファイル名によっては正しく判定できない場合があります。
+    </p>
+  </section>
+
+  <section>
+    <h2>3. 使用上の注意</h2>
+
+    <div class="notice">
+      <strong>重要：</strong>
+      本ビューアはGerberデータを確認するための補助ツールです。
+      表示結果が実際のPCB製造結果と完全に一致することを保証するものではありません。
+    </div>
+
+    <h3>製造前の確認について</h3>
+    <p>
+      基板発注・製造を行う場合は、本ビューアの表示だけを最終判断の根拠にせず、
+      元のCADデータ、CAM出力、または製造業者側のGerberチェックも併用してください。
+    </p>
+
+    <h3>表示について</h3>
+    <p>
+      ブラウザ、Gerberデータの構造、ファイルの出力方法などによって、
+      一部の表示が実際の基板の見た目と異なる場合があります。
+    </p>
+
+    <h3>大容量データについて</h3>
+    <p>
+      大きなGerber ZIPや複雑な基板では、ブラウザのメモリ使用量が増えたり、
+      表示に時間がかかったりする場合があります。
+    </p>
+
+    <h3>対応範囲について</h3>
+    <p>
+      本ビューアは主にFusion 360 Electronics / EAGLE由来のGerber ZIPを想定しています。
+      他のEDA/CAMソフトから出力したデータについては、ファイル名や出力設定によって
+      正常に分類・表示ができない可能性があります。
+    </p>
+  </section>
+
+  <section>
+    <h2>4. データの取り扱い</h2>
+    <p>
+      選択したGerber ZIPは、ビューアの動作に必要な範囲でブラウザ上で処理されます。
+      本ビューア自身がGerberデータを任意のサーバーへアップロードする機能は実装していません。
+    </p>
+    <p>
+      一方で、Gerber変換ライブラリを読み込むために外部CDNへの通信が発生します。
+      完全なオフライン環境で利用する場合は、外部ライブラリをローカルへ配置する等の
+      別途対応が必要です。
+    </p>
+    <p class="small">
+      ※ CDN側の提供状況や通信環境によって、ライブラリを読み込めない場合があります。
+    </p>
+  </section>
+
+  <section>
+    <h2>5. 使用ライブラリ</h2>
+    <h3>gerber-to-svg 4.2.8</h3>
+    <p>
+      Gerber / NC DrillデータをSVGへ変換するために使用しています。
+      npm上の4.2.8はMIT Licenseとして掲載されています。<br>
+      Repository:
+      <a href="https://github.com/tracespace/gerber-to-svg" target="_blank" rel="noopener">
+        github.com/tracespace/gerber-to-svg
+      </a><br>
+      Package:
+      <a href="https://www.npmjs.com/package/gerber-to-svg" target="_blank" rel="noopener">
+        npmjs.com/package/gerber-to-svg
+      </a>
+    </p>
+    <p class="small">
+      本ライブラリはGerber / NC DrillをSVGへ変換する機能を提供するライブラリです。
+      リポジトリは現在アーカイブされ、開発はTracespace側へ移動したと案内されています。
+    </p>
+  </section>
+
+  <section>
+    <h2>6. ライセンス・著作権</h2>
+
+    <h3>本ビューアについて</h3>
+    <p>
+      本ビューア本体の著作権・利用条件については、配布元で別途定めるものとします。
+      以下の記載を必要に応じて編集してください。
+    </p>
+
+    <div class="notice">
+      Copyright (c) 2026 KB2218-31<br>
+      <h2>本サイト利用条件</h2>
+      <p>「KB Gerber Viewer」（以下「本サイト」）は、ガーバーデータをブラウザ上で確認することを目的としています。</p>
+      <p>本サイトは、個人利用、学習、教育、回路設計、および基板設計に関する確認用途において自由に利用することができます。</p>
+      <p>本サイトの利用にあたり、利用登録等は不要です。</p>
+      <p>だだし、本サイトによって表示された内容について、その正確性、完全性、特定の製造環境への適合性を保証するものではありません。</p>
+      <p>特に基板の製造・発注・販売等に使用する場合は本サイトの表示結果のみを最終的な判断材料にせず、利用者自身の責任においてガーバーデータ、元のCADデータ、製造業者側の確認閣下等を併用して最終判断を行ってください。</p><br>
+      <p>本サイトの利用によって発生した、製造上の不具合、設計上の問題、発注上の損失、その他の損害について、作者は一切の責任を負いません。</p>
+      <p>本サイト独自のコンテンツ、文章、デザイン等を作者の許可なく転載・複製することを禁止します。</p>
+      <p>ただし、本サイトに含まれる第三者製のライブラリ等については、それぞれのライセンス条件を優先するものとします。</p>
+      <p>本サイトに含まれる第三者製のライブラリについてはそれぞれのライセンス条件に従うものとします。</p>
+      <p>本サイトの利用条件は予告なく変更される場合があります。</p>
+      <p>変更後の利用条件は、本サイト上に掲載された時点から適応されます。</p><br>
+      <h2>著作権</h2>
+      <p>本サイトのコード、及び独自のコンテンツに関する著作権は、KB2218-31に帰属します。</p>
+      <p>第三者製のライブラリ及びその他の外部コンポーネントについては、それぞれの著作権者に帰属します。</p> 
+      
+
+    </div>
+
+    <h3>gerber-to-svg 4.2.8</h3>
+    <p>
+      <code>gerber-to-svg</code> はMIT Licenseで提供されています。
+      配布・利用する際は、元ライブラリの著作権表示およびライセンス条件を尊重してください。
+    </p>
+
+    <div class="license">MIT License
+
+This software is provided under the MIT License.
+Please refer to the original gerber-to-svg repository/package for the
+authoritative copyright notice and full license text.
+
+Original project:
+https://github.com/tracespace/gerber-to-svg
+
+Package:
+https://www.npmjs.com/package/gerber-to-svg
+
+  </section>
+
+  <section>
+    <h2>7. 免責事項</h2>
+    <p>
+      本ビューアの利用によって生じた、データの解釈違い、製造不良、
+      発注上の問題、その他の損害について、作者は責任を負いません。
+    </p>
+    <p>
+      特に製造・発注に使用する場合は、必ず利用者自身で出力データを確認してください。
+    </p>
+  </section>
+
+  <section>
+    <h2>8. 更新履歴</h2>
+    <p><strong>2026年08月20日</strong> — 初版の注意事項・ライセンスページを作成。</p>
+  </section>
+
+  <div class="footer">
+    KB Gerber Viewer / License & Notes
+  </div>
+</div>
+</body>
+</html>

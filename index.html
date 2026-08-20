@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KB Gerber Viewer</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0f1116;
+  --panel:#171a21;
+  --panel2:#1d212a;
+  --border:#303642;
+  --text:#e7ebf2;
+  --muted:#98a1b2;
+  --accent:#7aa2ff;
+  --board:#243126;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI","Yu Gothic",Meiryo,sans-serif;
+}
+button,input{font:inherit}
+.app{width:100%;min-height:100vh;padding:18px}
+.header{
+  display:flex;justify-content:space-between;gap:14px;align-items:flex-end;
+  margin-bottom:14px;flex-wrap:wrap
+}
+.title{font-size:22px;font-weight:700}
+.subtitle{margin-top:4px;color:var(--muted);font-size:13px}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+button,.file-button,.info-link{
+  border:1px solid var(--border);background:var(--panel);
+  color:var(--text);padding:9px 12px;border-radius:9px;cursor:pointer;
+  text-decoration:none;display:inline-flex;align-items:center
+}
+.info-link:hover{background:var(--panel2)}
+button:hover,.file-button:hover{background:var(--panel2)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.file-button input{display:none}
+.layout{
+  display:grid;grid-template-columns:240px minmax(0,1fr);gap:14px
+}
+.sidebar{
+  border:1px solid var(--border);border-radius:12px;background:var(--panel);
+  overflow:hidden;min-height:620px
+}
+.sidebar-head{
+  display:flex;justify-content:space-between;padding:10px 12px;
+  border-bottom:1px solid var(--border);font-weight:650
+}
+.layers{max-height:570px;overflow:auto}
+.layer{
+  display:grid;grid-template-columns:20px 12px minmax(0,1fr);
+  align-items:center;gap:7px;padding:9px 10px;border-bottom:1px solid #262b34
+}
+.layer input{margin:0}
+.dot{width:11px;height:11px;border-radius:3px;border:1px solid #758094}
+.layer-name{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.layer-sub{display:block;color:var(--muted);font-size:11px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewer-wrap{
+  border:1px solid var(--border);border-radius:12px;background:#0a0c0f;
+  overflow:hidden
+}
+.toolbar{
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:9px 11px;border-bottom:1px solid var(--border);flex-wrap:wrap
+}
+.status{color:var(--muted);font-size:12px}
+.mode-badge{
+  padding:4px 7px;border:1px solid var(--border);border-radius:6px;
+  background:#12151a;color:#d6dbe3;font-size:11px;font-weight:600;
+}
+.canvas-wrap{
+  position:relative;height:min(78vh,760px);min-height:520px;overflow:hidden;
+  background:#0b0d10
+}
+canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+canvas.dragging{cursor:grabbing}
+.drop{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  pointer-events:none
+}
+.drop-box{
+  text-align:center;border:1px dashed #4a5363;border-radius:12px;
+  padding:22px 28px;background:rgba(15,17,22,.74)
+}
+.drop-box strong{display:block;font-size:16px}
+.drop-box span{display:block;margin-top:5px;color:var(--muted);font-size:12px}
+.metrics{
+  display:flex;gap:8px;flex-wrap:wrap;padding:9px 11px;border-top:1px solid var(--border)
+}
+.metric{
+  padding:5px 8px;border-radius:7px;background:var(--panel);
+  border:1px solid var(--border);font-size:12px;color:var(--muted)
+}
+.error{
+  color:#ff9c9c;background:#29181b;border:1px solid #5b2a31;
+  padding:9px 11px;border-radius:8px;margin-top:10px;font-size:12px
+}
+@media(max-width:820px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{min-height:auto}
+  .layers{max-height:280px}
+  .canvas-wrap{min-height:430px}
+}
+</style>
+<script src="https://unpkg.com/gerber-to-svg@4.2.8/dist/gerber-to-svg.min.js"></script>
+
+<script>
+if(typeof window.gerberToSvg!=="function"){
+  const s=document.createElement("script");
+  s.src="https://cdn.jsdelivr.net/npm/gerber-to-svg@4.2.8/dist/gerber-to-svg.min.js";
+  s.async=false;
+  document.head.appendChild(s);
+}
+</script>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div>
+      <div class="title">KB Gerber Viewer</div>
+      <div class="subtitle">Gerber ZIP用ビューア</div>
+      <p>※ このビューアは、Fusion 360のGerber ZIP出力を前提にしています。その他のGerber ZIPでは正しく表示されない場合があります。</p>
+    </div>
+    <div class="controls">
+      <label class="file-button">Gerber ZIPを開く
+        <input id="zipInput" type="file" accept=".zip,application/zip">
+      </label>
+      <button id="fitButton">全体表示</button>
+      <button id="frontButton">表面</button>
+      <button id="backButton">裏面</button>
+      <button id="copperButton">配線表示</button>
+      <button id="routeTopButton">配線 Top</button>
+      <button id="routeBottomButton">配線 Bottom</button>
+      <button id="allButton">全レイヤー</button>
+      <button id="clearButton">クリア</button>
+<a class="info-link" href="info.html" target="_blank" rel="noopener">
+  使用上の注意・ライセンス
+</a>
+    </div>
+  </div>
+
+  <div id="errorBox" class="error" style="display:none"></div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span>Layers</span><span id="layerCount">0</span>
+      </div>
+      <div id="layers" class="layers">
+        <div style="padding:14px;color:var(--muted);font-size:13px">Gerber ZIPを読み込んでください。</div>
+      </div>
+    </aside>
+
+    <section class="viewer-wrap">
+      <div class="toolbar">
+        <div id="status" class="status">待機中</div>
+        <div class="status" id="modeBadge">MODE: BOARD / TOP</div>
+        <div class="status">ホイール: ズーム / ドラッグ: 移動 / レイヤーをダブルクリック: 単独表示 / 全体表示: 表面を全体表示</div>
+      </div>
+      <div id="canvasWrap" class="canvas-wrap">
+        <canvas id="canvas" aria-label="Gerber PCB viewer"></canvas>
+        <div id="drop" class="drop">
+          <div class="drop-box">
+            <strong>FusionのGerber ZIPをここへ</strong>
+            <span>クリックしてZIPを選択することもできます</span>
+          </div>
+        </div>
+      </div>
+      <div class="metrics">
+        <div class="metric" id="boardMetric">基板サイズ: -</div>
+        <div class="metric" id="originMetric">原点: -</div>
+        <div class="metric" id="fileMetric">ファイル: 0</div>
+      </div>
+    </section>
+  </div>
+  
+<div class="footer-note">
+  <a href="fusion_gerber_viewer_info.html" target="_blank" rel="noopener">
+    このビューアについて・使用ライブラリ・注意事項
+  </a>
+</div>
+</div>
+
+<script>
+"use strict";
+
+const $ = (s) => document.querySelector(s);
+
+const canvas = $("#canvas");
+const ctx = canvas.getContext("2d");
+const canvasWrap = $("#canvasWrap");
+const zipInput = $("#zipInput");
+const statusEl = $("#status");
+const layersEl = $("#layers");
+const layerCountEl = $("#layerCount");
+const dropEl = $("#drop");
+const errorBox = $("#errorBox");
+const boardMetric = $("#boardMetric");
+const originMetric = $("#originMetric");
+const fileMetric = $("#fileMetric");
+
+let layers = [];
+let boardBounds = null;
+let dpr = 1;
+let view = { scale: 1, x: 0, y: 0 };
+let dragging = false;
+let dragPointer = {x:0,y:0};
+let activeObjectPointer = null;
+let displayMode = "board";
+
+const EPS = 1e-9;
+
+function setStatus(s){ statusEl.textContent = s; }
+function showError(s){
+  errorBox.textContent = s;
+  errorBox.style.display = "block";
+}
+function clearError(){
+  errorBox.textContent = "";
+  errorBox.style.display = "none";
+}
+
+function escName(s){
+  return s.replaceAll("\\","/").split("/").pop();
+}
+
+/* ---------------- ZIP reader: stored + deflate, no external library ---------------- */
+
+function u16(v, p){ return v.getUint16(p, true); }
+function u32(v, p){ return v.getUint32(p, true); }
+
+async function inflateRaw(bytes){
+  if (!("DecompressionStream" in window)){
+    throw new Error("このブラウザはDecompressionStreamに対応していません。Microsoft Edge / Chromeの最新版を使用してください。");
+  }
+  const ds = new DecompressionStream("deflate-raw");
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function readZip(file){
+  const buf = await file.arrayBuffer();
+  const v = new DataView(buf);
+  const bytes = new Uint8Array(buf);
+
+  // EOCDを末尾から検索
+  let eocd = -1;
+  const min = Math.max(0, bytes.length - 65557);
+  for(let p=bytes.length-22; p>=min; p--){
+    if(u32(v,p) === 0x06054b50){ eocd=p; break; }
+  }
+  if(eocd < 0) throw new Error("ZIPの終端レコードが見つかりません。");
+
+  const entriesCount = u16(v,eocd+10);
+  const centralSize = u32(v,eocd+12);
+  const centralOffset = u32(v,eocd+16);
+
+  // ZIP64を明示的に判定する
+  if(entriesCount === 0xffff || centralOffset === 0xffffffff || centralSize === 0xffffffff){
+    throw new Error("ZIP64形式には対応していません。Fusionから通常のZIPとして再出力してください。");
+  }
+
+  const out = [];
+  let p = centralOffset;
+  for(let i=0;i<entriesCount;i++){
+    if(u32(v,p) !== 0x02014b50) throw new Error("ZIP中央ディレクトリが破損しています。");
+    const flags = u16(v,p+8);
+    const method = u16(v,p+10);
+    const compSize = u32(v,p+20);
+    const uncompSize = u32(v,p+24);
+    const nameLen = u16(v,p+28);
+    const extraLen = u16(v,p+30);
+    const commentLen = u16(v,p+32);
+    const localOffset = u32(v,p+42);
+
+    if(flags & 0x0001) throw new Error("暗号化ZIPには対応していません。");
+
+    const nameBytes = bytes.slice(p+46,p+46+nameLen);
+    const name = new TextDecoder("utf-8",{fatal:false}).decode(nameBytes);
+    const local = localOffset;
+    if(u32(v,local) !== 0x04034b50) throw new Error("ZIPローカルヘッダが破損しています。");
+    const localNameLen = u16(v,local+26);
+    const localExtraLen = u16(v,local+28);
+    const dataStart = local + 30 + localNameLen + localExtraLen;
+    const comp = bytes.slice(dataStart, dataStart + compSize);
+
+    if(name.endsWith("/")){
+      p += 46+nameLen+extraLen+commentLen;
+      continue;
+    }
+
+    let data;
+    if(method === 0){
+      data = comp;
+    }else if(method === 8){
+      data = await inflateRaw(comp);
+    }else{
+      p += 46+nameLen+extraLen+commentLen;
+      continue;
+    }
+
+    if(uncompSize !== 0 && data.length !== uncompSize){
+      throw new Error(`ZIPの展開サイズが一致しません: ${name}`);
+    }
+    out.push({name, data});
+    p += 46+nameLen+extraLen+commentLen;
+  }
+  return out;
+}
+
+/* ---------------- Accurate Gerber / NC Drill rendering ----------------
+   The previous hand-written RS-274X parser was the source of the bad
+   diagonal jumps, malformed regions, and inaccurate silkscreen.
+
+   This build delegates all Gerber/Excellon geometry to the browser build
+   of @sctg/gerber-to-svg. Its renderer understands Gerber polarity,
+   regions, apertures, and NC drill files.
+------------------------------------------------------------------------ */
+
+function classify(name, text){
+  const base=escName(name).toUpperCase();
+  const attr=(text.match(/%IN([^*]+)\*%/i)||[])[1]||"";
+  const s=(base+" "+attr).toUpperCase();
+
+  if(/\.XLN$|\.DRL$/.test(base) || /DRILL|EXCELLON/.test(s))
+    return ["drill","Drill"];
+  if(/\.GTL$/.test(base) || /TOP\s*COPPER|TOP_COPPER/.test(s))
+    return ["topCopper","Top Copper"];
+  if(/\.GBL$/.test(base) || /BOTTOM\s*COPPER|BOTTOM_COPPER/.test(s))
+    return ["bottomCopper","Bottom Copper"];
+  if(/\.GTS$/.test(base) || /SOLDERMASK\s*TOP|TOP\s*MASK/.test(s))
+    return ["topMask","Top Solder Mask"];
+  if(/\.GBS$/.test(base) || /SOLDERMASK\s*BOTTOM|BOTTOM\s*MASK/.test(s))
+    return ["bottomMask","Bottom Solder Mask"];
+  if(/\.GTO$/.test(base) || /SILKSCREEN\s*TOP|TOP\s*SILK/.test(s))
+    return ["topSilk","Top Silkscreen"];
+  if(/\.GBO$/.test(base) || /SILKSCREEN\s*BOTTOM|BOTTOM\s*SILK/.test(s))
+    return ["bottomSilk","Bottom Silkscreen"];
+  if(/\.GTP$/.test(base) || /SOLDERPASTE\s*TOP|TOP\s*PASTE/.test(s))
+    return ["topPaste","Top Paste"];
+  if(/\.GBP$/.test(base) || /SOLDERPASTE\s*BOTTOM|BOTTOM\s*PASTE/.test(s))
+    return ["bottomPaste","Bottom Paste"];
+  if(/\.GKO$/.test(base) || /BOARD\s*OUTLINE|OUTLINE/.test(s))
+    return ["outline","Board Outline"];
+
+  return null;
+}
+
+function cssColorFor(type, mode){
+  // Physical board preview.
+  if(mode==="board" || mode==="front" || mode==="back"){
+    if(type==="topCopper" || type==="bottomCopper") return "#205f2d";
+    if(type==="topSilk" || type==="bottomSilk") return "#ffffff";
+    if(type==="drill") return "#edf3ef";
+    if(type==="outline") return "#ffffff";
+  }
+
+  // CAD/routing view.
+  if(type==="topCopper") return "#ef3d3d";
+  if(type==="bottomCopper") return "#287fc2";
+  if(type==="topSilk" || type==="bottomSilk") return "#e8edf1";
+  if(type==="drill") return "#55d0ae";
+  if(type==="outline") return "#e0c744";
+  if(type==="topMask" || type==="bottomMask") return "#3c9b4b";
+  if(type==="topPaste" || type==="bottomPaste") return "#b79f74";
+  return "#b89bf0";
+}
+
+function modeToRenderMode(){
+  if(displayMode==="board" || displayMode==="front") return "board";
+  if(displayMode==="back") return "back";
+  if(displayMode==="copperTop") return "routingTop";
+  if(displayMode==="copperBottom") return "routingBottom";
+  if(displayMode==="copper") return "routing";
+  return "all";
+}
+
+function svgMeta(svgText){
+  const doc=new DOMParser().parseFromString(svgText,"image/svg+xml");
+  const root=doc.documentElement;
+
+  if(!root || root.nodeName.toLowerCase()==="parsererror"){
+    throw new Error("Gerber SVGの解析に失敗しました。");
+  }
+
+  const vb=(root.getAttribute("viewBox")||"")
+    .trim()
+    .split(/[ ,]+/)
+    .map(Number);
+
+  if(vb.length!==4 || vb.some(v=>!Number.isFinite(v))){
+    throw new Error("Gerber SVGのviewBoxを取得できませんでした。");
+  }
+
+  return {
+    root,
+    minX:vb[0],
+    minY:vb[1],
+    width:vb[2],
+    height:vb[3],
+    maxX:vb[0]+vb[2],
+    maxY:vb[1]+vb[3]
+  };
+}
+
+async function convertGerberLayer(layer){
+  if(typeof window.gerberToSvg!=="function"){
+    throw new Error(
+      "Gerber変換エンジンを読み込めませんでした。インターネット接続を確認してください。"
+    );
+  }
+
+  const svgText = await new Promise((resolve,reject)=>{
+    let settled=false;
+
+    const finish=(err,result)=>{
+      if(settled)return;
+      settled=true;
+      if(err) reject(err);
+      else resolve(result);
+    };
+
+    try{
+      // The browser build exposes the classic callback API:
+      // gerberToSvg(input, options, callback).
+      window.gerberToSvg(
+        layer.text,
+        {
+          color: "#ffffff",
+          pretty: false,
+          optimizePaths: true
+        },
+        (err,result)=>{
+          if(err){
+            finish(err);
+            return;
+          }
+          if(typeof result!=="string"){
+            finish(new Error(`${layer.name}: Gerber SVGの生成結果が空です。`));
+            return;
+          }
+          finish(null,result);
+        }
+      );
+    }catch(err){
+      finish(err);
+    }
+  });
+
+  const meta=svgMeta(svgText);
+
+  layer.svgText=svgText;
+  layer.meta=meta;
+  layer.imageCache=new Map();
+  layer.ok=true;
+
+  return layer;
+}
+
+function calcBounds(){
+  let b=null;
+
+  for(const l of layers){
+    if(!l.meta)continue;
+    const m=l.meta;
+
+    if(!b){
+      b={
+        minX:m.minX,
+        maxX:m.maxX,
+        minY:m.minY,
+        maxY:m.maxY
+      };
+    }else{
+      b.minX=Math.min(b.minX,m.minX);
+      b.maxX=Math.max(b.maxX,m.maxX);
+      b.minY=Math.min(b.minY,m.minY);
+      b.maxY=Math.max(b.maxY,m.maxY);
+    }
+  }
+
+  return b;
+}
+
+function layerAllowedInMode(layerType, mode){
+  if(mode==="board" || mode==="front"){
+    return ["topCopper","topSilk","drill"].includes(layerType);
+  }
+  if(mode==="back"){
+    return ["bottomCopper","bottomSilk","drill"].includes(layerType);
+  }
+  if(mode==="routingTop"){
+    return ["topCopper","topSilk","drill"].includes(layerType);
+  }
+  if(mode==="routingBottom"){
+    return ["bottomCopper","bottomSilk","drill"].includes(layerType);
+  }
+  if(mode==="routing"){
+    return [
+      "topCopper","bottomCopper",
+      "topSilk","bottomSilk",
+      "drill"
+    ].includes(layerType);
+  }
+  return true;
+}
+
+function colorForLayerMode(layer, mode){
+  if(mode==="board" || mode==="front"){
+    if(layer.type==="topCopper") return "#1b4f26";
+    if(layer.type==="topSilk") return "#ffffff";
+    if(layer.type==="drill") return "#f1f5f2";
+    if(layer.type==="outline") return "#ffffff";
+    return "#2b7a32";
+  }
+
+  if(mode==="back"){
+    if(layer.type==="bottomCopper") return "#1b4f26";
+    if(layer.type==="bottomSilk") return "#ffffff";
+    if(layer.type==="drill") return "#f1f5f2";
+    if(layer.type==="outline") return "#ffffff";
+    return "#2b7a32";
+  }
+
+  if(mode==="routingTop"){
+    if(layer.type==="topCopper") return "#ef3d3d";
+    if(layer.type==="topSilk") return "#e9edf2";
+    if(layer.type==="drill") return "#55d0ae";
+    if(layer.type==="outline") return "#e0c744";
+    return "#999999";
+  }
+
+  if(mode==="routingBottom"){
+    if(layer.type==="bottomCopper") return "#287fc2";
+    if(layer.type==="bottomSilk") return "#e9edf2";
+    if(layer.type==="drill") return "#55d0ae";
+    if(layer.type==="outline") return "#e0c744";
+    return "#999999";
+  }
+
+  if(mode==="routing"){
+    if(layer.type==="topCopper") return "#ef3d3d";
+    if(layer.type==="bottomCopper") return "#287fc2";
+    if(layer.type==="topSilk" || layer.type==="bottomSilk") return "#e9edf2";
+    if(layer.type==="drill") return "#55d0ae";
+    if(layer.type==="outline") return "#e0c744";
+    if(layer.type==="topMask") return "#47a65a";
+    if(layer.type==="bottomMask") return "#3d8e4f";
+    if(layer.type==="topPaste") return "#c0a46f";
+    if(layer.type==="bottomPaste") return "#98815c";
+    return "#999999";
+  }
+
+  // "all" / exact layer inspection.
+  if(layer.type==="topCopper") return "#ef3d3d";
+  if(layer.type==="bottomCopper") return "#287fc2";
+  if(layer.type==="topSilk" || layer.type==="bottomSilk") return "#f1f1f1";
+  if(layer.type==="topMask") return "#42a854";
+  if(layer.type==="bottomMask") return "#328c45";
+  if(layer.type==="topPaste") return "#c3a56c";
+  if(layer.type==="bottomPaste") return "#967e5a";
+  if(layer.type==="drill") return "#58d3b1";
+  if(layer.type==="outline") return "#e0c744";
+  return "#b89bf0";
+}
+
+function colorizeGerberSvg(svgText, color){
+  const doc=new DOMParser().parseFromString(svgText,"image/svg+xml");
+  const root=doc.documentElement;
+
+  if(!root || root.nodeName.toLowerCase()==="parsererror"){
+    throw new Error("SVGレイヤーを再解析できませんでした。");
+  }
+
+  const paintable=(el)=>{
+    const tag=el.tagName?.toLowerCase()||"";
+    return ![
+      "svg","defs","clippath","mask","pattern",
+      "lineargradient","radialgradient","stop","symbol"
+    ].includes(tag);
+  };
+
+  root.querySelectorAll("*").forEach(el=>{
+    if(!paintable(el)) return;
+
+    for(const attr of ["fill","stroke","color"]){
+      const value=el.getAttribute(attr);
+      if(value && value.toLowerCase()!=="none"){
+        el.setAttribute(attr,color);
+      }
+    }
+
+    const style=el.getAttribute("style");
+    if(style){
+      const replaced=style
+        .replace(/fill\s*:\s*([^;]+)/gi,(m,v)=>/none/i.test(v)?m:`fill:${color}`)
+        .replace(/stroke\s*:\s*([^;]+)/gi,(m,v)=>/none/i.test(v)?m:`stroke:${color}`)
+        .replace(/color\s*:\s*([^;]+)/gi,(m,v)=>`color:${color}`);
+      el.setAttribute("style",replaced);
+    }
+  });
+
+  root.setAttribute("color",color);
+  root.style.color=color;
+
+  return new XMLSerializer().serializeToString(root);
+}
+
+function makeLayerSvg(layer, mode){
+  if(!layer.svgText || !layer.meta) return null;
+
+  const color=colorForLayerMode(layer,mode);
+
+  // Always recolor the SVG at element level. The physical board views use
+  // the PCB palette, while routing modes use the CAD palette.
+  return colorizeGerberSvg(layer.svgText, color);
+}
+
+function loadLayerImage(layer, mode){
+  if(!layer.imageCache) layer.imageCache=new Map();
+
+  if(layer.imageCache.has(mode)){
+    return layer.imageCache.get(mode);
+  }
+
+  const allowed =
+    mode==="board" ? ["topCopper","topSilk","drill"] :
+    mode==="back" ? ["bottomCopper","bottomSilk","drill"] :
+    mode==="routingTop" ? ["topCopper","topSilk","drill"] :
+    mode==="routingBottom" ? ["bottomCopper","bottomSilk","drill"] :
+    mode==="routing" ? [
+      "topCopper","bottomCopper",
+      "topSilk","bottomSilk",
+      "drill"
+    ] :
+    null;
+
+  // "all" deliberately allows every manufacturing layer except GKO.
+  if(allowed && !allowed.includes(layer.type)){
+    return null;
+  }
+
+  const svgText=makeLayerSvg(layer,mode);
+  if(!svgText)return null;
+
+  const doc=new DOMParser().parseFromString(svgText,"image/svg+xml");
+  const root=doc.documentElement;
+
+  if(!root || root.nodeName.toLowerCase()==="parsererror"){
+    throw new Error(`${layer.name}: SVGを再構成できませんでした。`);
+  }
+
+  root.setAttribute("xmlns","http://www.w3.org/2000/svg");
+  root.setAttribute(
+    "viewBox",
+    `${layer.meta.minX} ${layer.meta.minY} ${layer.meta.width} ${layer.meta.height}`
+  );
+  root.setAttribute("width",String(Math.max(1,Math.ceil(layer.meta.width))));
+  root.setAttribute("height",String(Math.max(1,Math.ceil(layer.meta.height))));
+
+  const serialized=new XMLSerializer().serializeToString(root);
+  const blob=new Blob([serialized],{
+    type:"image/svg+xml;charset=utf-8"
+  });
+  const url=URL.createObjectURL(blob);
+  const img=new Image();
+
+  const promise=new Promise((resolve,reject)=>{
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror=()=>{
+      URL.revokeObjectURL(url);
+      reject(new Error(`${layer.name}: SVG画像の生成に失敗しました。`));
+    };
+  });
+
+  img.decoding="async";
+  img.src=url;
+
+  layer.imageCache.set(mode,promise);
+  return promise;
+}
+
+async function prepareImages(mode){
+  const jobs=[];
+
+  for(const layer of layers){
+    if(!layer.visible || !layer.ok)continue;
+
+    const promise=loadLayerImage(layer,mode);
+    if(promise)jobs.push(promise);
+  }
+
+  await Promise.all(jobs);
+  bindImageLoadStates();
+  render();
+}
+
+function drawLayerImage(layer,mode){
+  if(!layer.visible || !layer.ok || !layer.meta)return;
+
+  const cached=layer.imageCache?.get(mode);
+  if(!cached)return;
+
+  const img=cached.__loadedImage;
+  if(!img)return;
+
+  const m=layer.meta;
+  const scale=view.scale;
+  const sx=canvas.width/(2*dpr) + (m.minX-view.x)*scale;
+  const sy=canvas.height/(2*dpr) - (m.maxY-view.y)*scale;
+  const dw=m.width*scale;
+  const dh=m.height*scale;
+
+  ctx.drawImage(img,sx,sy,dw,dh);
+}
+
+function bindImageLoadStates(){
+  for(const layer of layers){
+    if(!layer.imageCache)continue;
+
+    for(const [mode,p] of layer.imageCache.entries()){
+      if(!p || p.__wrapped)return;
+
+      p.__wrapped=true;
+      p.then(img=>{
+        p.__loadedImage=img;
+        render();
+      }).catch(err=>{
+        console.warn(`[Gerber] ${layer.name}`,err);
+      });
+    }
+  }
+}
+
+function fitView(){
+  if(!boardBounds){
+    view={scale:1,x:0,y:0};
+    render();
+    return;
+  }
+
+  const w=canvasWrap.clientWidth;
+  const h=canvasWrap.clientHeight;
+  const bw=Math.max(.001,boardBounds.maxX-boardBounds.minX);
+  const bh=Math.max(.001,boardBounds.maxY-boardBounds.minY);
+
+  view.scale=Math.min(w/bw,h/bh)*.88;
+  view.x=(boardBounds.minX+boardBounds.maxX)/2;
+  view.y=(boardBounds.minY+boardBounds.maxY)/2;
+
+  render();
+}
+
+function updateMetrics(){
+  if(boardBounds){
+    boardMetric.textContent=
+      `基板範囲: ${((boardBounds.maxX-boardBounds.minX)/1000).toFixed(2)} × ${((boardBounds.maxY-boardBounds.minY)/1000).toFixed(2)} mm`;
+    originMetric.textContent=
+      `Gerber座標: X ${(boardBounds.minX/1000).toFixed(2)}…${(boardBounds.maxX/1000).toFixed(2)} / Y ${(boardBounds.minY/1000).toFixed(2)}…${(boardBounds.maxY/1000).toFixed(2)} mm`;
+  }else{
+    boardMetric.textContent="基板範囲: -";
+    originMetric.textContent="Gerber座標: -";
+  }
+
+  fileMetric.textContent=`ファイル: ${layers.length}`;
+}
+
+function render(){
+  const w=canvas.width/dpr;
+  const h=canvas.height/dpr;
+
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  const routing=displayMode==="copper" ||
+                displayMode==="copperTop" ||
+                displayMode==="copperBottom";
+
+  ctx.fillStyle=routing ? "#20252b" : "#eef0f2";
+  ctx.fillRect(0,0,w,h);
+
+  if(routing){
+    const visibleRange=Math.max(w,h)/Math.max(view.scale,EPS);
+    let grid=10;
+    if(visibleRange<120)grid=5;
+    if(visibleRange<60)grid=2;
+    if(visibleRange<25)grid=1;
+    if(visibleRange<10)grid=.5;
+    if(visibleRange<5)grid=.2;
+
+    const [wx1,wy1]=screenToWorld(0,h);
+    const [wx2,wy2]=screenToWorld(w,0);
+
+    ctx.save();
+    ctx.strokeStyle="rgba(190,205,220,.11)";
+    ctx.lineWidth=1;
+
+    for(let x=Math.floor(wx1/grid)*grid;x<=wx2;x+=grid){
+      const [sx]=worldToScreen(x,0);
+      ctx.beginPath();
+      ctx.moveTo(sx,0);
+      ctx.lineTo(sx,h);
+      ctx.stroke();
+    }
+
+    for(let y=Math.floor(wy1/grid)*grid;y<=wy2;y+=grid){
+      const [,sy]=worldToScreen(0,y);
+      ctx.beginPath();
+      ctx.moveTo(0,sy);
+      ctx.lineTo(w,sy);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // PCB substrate in physical top/bottom views.
+  if(boardBounds && !routing){
+    const bw=boardBounds.maxX-boardBounds.minX;
+    const bh=boardBounds.maxY-boardBounds.minY;
+    const pad=Math.max(bw*.003,bh*.003,.05);
+
+    const p1=worldToScreen(
+      boardBounds.minX-pad,
+      boardBounds.minY+bh+pad
+    );
+    const p2=worldToScreen(
+      boardBounds.maxX+pad,
+      boardBounds.minY-pad
+    );
+
+    const sx=Math.min(p1[0],p2[0]);
+    const sy=Math.min(p1[1],p2[1]);
+    const sw=Math.abs(p2[0]-p1[0]);
+    const sh=Math.abs(p2[1]-p1[1]);
+
+    ctx.fillStyle="#3f8b22";
+    ctx.fillRect(sx,sy,sw,sh);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(sx,sy,sw,sh);
+    ctx.clip();
+
+    ctx.strokeStyle="rgba(255,255,255,.025)";
+    ctx.lineWidth=1;
+
+    for(let x=sx;x<=sx+sw;x+=7){
+      ctx.beginPath();
+      ctx.moveTo(x,sy);
+      ctx.lineTo(x,sy+sh);
+      ctx.stroke();
+    }
+
+    for(let y=sy;y<=sy+sh;y+=7){
+      ctx.beginPath();
+      ctx.moveTo(sx,y);
+      ctx.lineTo(sx+sw,y);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  bindImageLoadStates();
+
+  const mode=modeToRenderMode();
+
+  // The bottom face is viewed from the opposite side, so mirror it.
+  if(displayMode==="back"){
+    ctx.save();
+    ctx.translate(w,0);
+    ctx.scale(-1,1);
+
+    for(const layer of layers){
+      if(layer.visible)drawLayerImage(layer,mode);
+    }
+
+    ctx.restore();
+  }else{
+    for(const layer of layers){
+      if(layer.visible)drawLayerImage(layer,mode);
+    }
+  }
+
+  // Do not render GKO itself. Fusion's GKO can contain construction/dimension
+  // geometry. Use a clean viewer-generated outline instead.
+  if(boardBounds){
+    const bw=boardBounds.maxX-boardBounds.minX;
+    const bh=boardBounds.maxY-boardBounds.minY;
+    const pad=Math.max(bw*.003,bh*.003,.05);
+
+    const p1=worldToScreen(
+      boardBounds.minX-pad,
+      boardBounds.minY+bh+pad
+    );
+    const p2=worldToScreen(
+      boardBounds.maxX+pad,
+      boardBounds.minY-pad
+    );
+
+    const sx=Math.min(p1[0],p2[0]);
+    const sy=Math.min(p1[1],p2[1]);
+    const sw=Math.abs(p2[0]-p1[0]);
+    const sh=Math.abs(p2[1]-p1[1]);
+
+    ctx.save();
+
+    if(displayMode==="back"){
+      ctx.translate(w,0);
+      ctx.scale(-1,1);
+    }
+
+    ctx.strokeStyle=routing ? "#dec94b" : "rgba(250,255,250,.9)";
+    ctx.lineWidth=1.2;
+    ctx.strokeRect(sx,sy,sw,sh);
+    ctx.restore();
+  }
+}
+
+function visibleFilter(mode){
+  displayMode=mode;
+
+  // A mode has its own SVG coloration. Do not reuse a previous mode's bitmap.
+  for(const layer of layers){
+    if(layer.imageCache){
+      layer.imageCache.clear();
+    }
+  }
+
+  for(const layer of layers){
+    if(mode==="board" || mode==="front"){
+      layer.visible=[
+        "topCopper","topSilk","drill"
+      ].includes(layer.type);
+
+    }else if(mode==="back"){
+      layer.visible=[
+        "bottomCopper","bottomSilk","drill"
+      ].includes(layer.type);
+
+    }else if(mode==="copperTop"){
+      layer.visible=[
+        "topCopper","drill"
+      ].includes(layer.type);
+
+    }else if(mode==="copperBottom"){
+      layer.visible=[
+        "bottomCopper","drill"
+      ].includes(layer.type);
+
+    }else if(mode==="copper"){
+      layer.visible=[
+        "topCopper","bottomCopper",
+        "topSilk","bottomSilk",
+        "drill"
+      ].includes(layer.type);
+
+    }else if(mode==="all"){
+      // All electrical/manufacturing layers, except GKO construction graphics.
+      // The Board Outline can still be enabled manually in the layer list.
+      layer.visible=!["outline"].includes(layer.type);
+    }
+  }
+
+  updateModeBadge();
+  renderLayersUI();
+
+  prepareImages(modeToRenderMode()).catch(err=>{
+    console.error(err);
+    showError(err.message||String(err));
+  });
+}
+
+function updateModeBadge(){
+  const el=document.getElementById("modeBadge");
+  if(!el)return;
+
+  const labels={
+    board:"MODE: BOARD / TOP (PCB)",
+    front:"MODE: BOARD / TOP (PCB)",
+    back:"MODE: BOARD / BOTTOM (PCB)",
+    copper:"MODE: ROUTING / TOP + BOTTOM",
+    copperTop:"MODE: ROUTING / TOP",
+    copperBottom:"MODE: ROUTING / BOTTOM",
+    all:"MODE: ALL LAYERS (GKO OFF)"
+  };
+
+  el.textContent=labels[displayMode]||"MODE: BOARD / TOP";
+}
+
+function renderLayersUI(){
+  layerCountEl.textContent=layers.length;
+  layersEl.innerHTML="";
+
+  if(!layers.length){
+    layersEl.innerHTML=
+      '<div style="padding:14px;color:var(--muted);font-size:13px">Gerber ZIPを読み込んでください。</div>';
+    return;
+  }
+
+  for(const layer of layers){
+    const row=document.createElement("label");
+    row.className="layer";
+
+    const cb=document.createElement("input");
+    cb.type="checkbox";
+    cb.checked=layer.visible;
+
+    cb.addEventListener("change",()=>{
+      layer.visible=cb.checked;
+      render();
+    });
+
+    const dot=document.createElement("span");
+    dot.className="dot";
+
+    const displayModeForColor=
+      displayMode==="copperTop" ? "routingTop" :
+      displayMode==="copperBottom" ? "routingBottom" :
+      displayMode==="copper" ? "routing" :
+      (displayMode==="board"||displayMode==="front"||displayMode==="back") ? displayMode :
+      "routing";
+
+    dot.style.background=cssColorFor(layer.type,displayModeForColor);
+
+    const n=document.createElement("span");
+    n.className="layer-name";
+    n.title=layer.name;
+    n.innerHTML=
+      `${escapeHtml(layer.label)}<span class="layer-sub">${escapeHtml(layer.name)}</span>`;
+
+    row.title="ダブルクリックでこのレイヤーだけを表示";
+    row.addEventListener("dblclick",(e)=>{
+      e.preventDefault();
+      displayMode="all";
+      layers.forEach(x=>x.visible=false);
+      layer.visible=true;
+      updateModeBadge();
+      renderLayersUI();
+
+      prepareImages("all").catch(err=>{
+        showError(err.message||String(err));
+      });
+    });
+
+    row.append(cb,dot,n);
+    layersEl.appendChild(row);
+  }
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g,c=>({
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    "\"":"&quot;",
+    "'":"&#39;"
+  }[c]));
+}
+
+/* ---------------- Import ---------------- */
+
+async function loadZipFile(file){
+  clearError();
+
+  if(!file || !/\.zip$/i.test(file.name)){
+    showError("ZIPファイルを選択してください。");
+    return;
+  }
+
+  setStatus("ZIPを展開中…");
+  dropEl.style.display="none";
+
+  try{
+    const entries=await readZip(file);
+    const next=[];
+
+    for(const entry of entries){
+      const base=escName(entry.name);
+      const ext=(base.match(/\.([A-Za-z0-9]+)$/)||[])[1]?.toUpperCase()||"";
+
+      if(!/^(GTL|GBL|GTS|GBS|GTO|GBO|GTP|GBP|GKO|XLN|DRL)$/.test(ext)){
+        continue;
+      }
+
+      const decoded=new TextDecoder("utf-8",{fatal:false}).decode(entry.data);
+      const cls=classify(base,decoded);
+
+      if(!cls)continue;
+
+      next.push({
+        name:base,
+        label:cls[1],
+        type:cls[0],
+        text:decoded,
+        visible:true,
+        svgText:null,
+        meta:null,
+        imageCache:new Map(),
+        ok:false
+      });
+    }
+
+    if(!next.length){
+      throw new Error(
+        "Fusion形式のGerber / Drillファイルが見つかりませんでした。"
+      );
+    }
+
+    const order=[
+      "bottomCopper","topCopper",
+      "bottomMask","topMask",
+      "bottomPaste","topPaste",
+      "bottomSilk","topSilk",
+      "outline","drill"
+    ];
+    next.sort((a,b)=>order.indexOf(a.type)-order.indexOf(b.type));
+
+    setStatus(`${next.length}レイヤーをRS-274X / Excellonエンジンで解析中…`);
+
+    for(const layer of next){
+      try{
+        await convertGerberLayer(layer);
+      }catch(err){
+        console.warn(`[Gerber] ${layer.name}`,err);
+      }
+    }
+
+    layers=next.filter(l=>l.ok);
+
+    if(!layers.length){
+      throw new Error("Gerber / Excellonの解析に成功したレイヤーがありませんでした。");
+    }
+
+    boardBounds=calcBounds();
+    updateMetrics();
+
+    visibleFilter("board");
+    fitView();
+
+    setStatus(
+      `${layers.length}レイヤーを読み込みました（正確なGerber描画 / 表面表示）`
+    );
+  }catch(err){
+    console.error(err);
+
+    layers=[];
+    boardBounds=null;
+    updateMetrics();
+    renderLayersUI();
+
+    showError(err.message||String(err));
+    dropEl.style.display="";
+    setStatus("読み込みに失敗しました");
+    render();
+  }
+}
+
+
+function resizeCanvas(){
+  const r=canvasWrap.getBoundingClientRect();
+  dpr=window.devicePixelRatio||1;
+
+  canvas.width=Math.max(1,Math.floor(r.width*dpr));
+  canvas.height=Math.max(1,Math.floor(r.height*dpr));
+
+  render();
+}
+
+function worldToScreen(x,y){
+  const w=canvas.width/dpr;
+  const h=canvas.height/dpr;
+  return [
+    w/2 + (x-view.x)*view.scale,
+    h/2 - (y-view.y)*view.scale
+  ];
+}
+
+function screenToWorld(sx,sy){
+  const w=canvas.width/dpr;
+  const h=canvas.height/dpr;
+  return [
+    view.x + (sx-w/2)/view.scale,
+    view.y - (sy-h/2)/view.scale
+  ];
+}
+
+const resizeObserver=new ResizeObserver(resizeCanvas);
+resizeObserver.observe(canvasWrap);
+
+/* ---------------- Interaction ---------------- */
+
+zipInput.addEventListener("change",e=>{
+  const file=e.target.files?.[0];
+  if(file) loadZipFile(file);
+});
+
+["dragenter","dragover"].forEach(type=>{
+  canvasWrap.addEventListener(type,e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    dropEl.style.display="";
+    dropEl.querySelector(".drop-box").style.borderColor="#7aa2ff";
+  });
+});
+["dragleave","drop"].forEach(type=>{
+  canvasWrap.addEventListener(type,e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    dropEl.querySelector(".drop-box").style.borderColor="";
+  });
+});
+canvasWrap.addEventListener("drop",e=>{
+  const file=[...e.dataTransfer.files].find(f=>/\.zip$/i.test(f.name));
+  if(file)loadZipFile(file);
+});
+
+canvas.addEventListener("pointerdown",e=>{
+  dragging=true;
+  activeObjectPointer=e.pointerId;
+  dragPointer={x:e.clientX,y:e.clientY};
+  canvas.classList.add("dragging");
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove",e=>{
+  if(!dragging||e.pointerId!==activeObjectPointer)return;
+  const dx=e.clientX-dragPointer.x,dy=e.clientY-dragPointer.y;
+  dragPointer={x:e.clientX,y:e.clientY};
+  view.x-=dx/view.scale;
+  view.y+=dy/view.scale;
+  render();
+});
+function endDrag(e){
+  if(!dragging)return;
+  if(activeObjectPointer!==null && e.pointerId!==activeObjectPointer)return;
+  dragging=false;activeObjectPointer=null;canvas.classList.remove("dragging");
+}
+canvas.addEventListener("pointerup",endDrag);
+canvas.addEventListener("pointercancel",endDrag);
+canvas.addEventListener("dblclick",fitView);
+
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect();
+  const sx=e.clientX-r.left, sy=e.clientY-r.top;
+  const before=screenToWorld(sx,sy);
+  const factor=Math.exp(-e.deltaY*0.0015);
+  const next=Math.max(.05,Math.min(300,view.scale*factor));
+  view.scale=next;
+  const after=screenToWorld(sx,sy);
+  view.x += before[0]-after[0];
+  view.y += before[1]-after[1];
+  render();
+},{passive:false});
+
+$("#fitButton").addEventListener("click",()=>{visibleFilter("front");fitView();});
+$("#frontButton").addEventListener("click",()=>visibleFilter("front"));
+$("#backButton").addEventListener("click",()=>visibleFilter("back"));
+$("#copperButton").addEventListener("click",()=>visibleFilter("copper"));
+$("#routeTopButton").addEventListener("click",()=>visibleFilter("copperTop"));
+$("#routeBottomButton").addEventListener("click",()=>visibleFilter("copperBottom"));
+$("#allButton").addEventListener("click",()=>visibleFilter("all"));
+$("#clearButton").addEventListener("click",()=>{
+  layers=[];boardBounds=null;view={scale:1,x:0,y:0};displayMode="board";
+  updateModeBadge();
+  renderLayersUI();updateMetrics();render();
+  dropEl.style.display="";
+  clearError();setStatus("クリアしました");
+});
+window.addEventListener("resize",resizeCanvas);
+
+renderLayersUI();
+updateModeBadge();
+resizeCanvas();
+</script>
+</body>
+</html>
