@@ -334,8 +334,8 @@ if(typeof window.gerberToSvg!=="function"){
   <div class="header">
     <div>
       <div class="title">KB Gerber Viewer</div>
-      <div class="subtitle">Autodesk社のFusion 360 Electronics / EAGLE CAM、KiCadの<br>
-        Gerber / Excellon出力ZIPを主な対象として制作されています。</div>
+      <br><div class="subtitle">Autodesk社のFusion 360/EAGLE、KiCadの<br>
+        Gerber/Excellon出力ZIPを主な対象として制作<br>されています。</div>
       <div class="subtitle">KiCadでは「製造ファイルを生成」したGerber/Drill<br>出力に対応しています。</div>
     </div>
     <div class="controls">
@@ -2125,3 +2125,1121 @@ resizeCanvas();
   }
 }
 </style>
+
+<!-- =========================================================
+     KB Gerber Viewer - 初心者向け DFM 拡張
+     既存のGerber表示処理は変更しません
+========================================================= -->
+
+<style>
+/* ---------------- DFM button ---------------- */
+.kb-dfm-button{
+  border:1px solid var(--border);
+  background:var(--panel);
+  color:var(--text);
+  padding:6px 8px;
+  border-radius:9px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.kb-dfm-button:hover{
+  background:var(--panel2);
+}
+
+/* ---------------- DFM modal ---------------- */
+.kb-dfm-overlay{
+  position:fixed;
+  inset:0;
+  z-index:1000;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:rgba(0,0,0,.62);
+  backdrop-filter:blur(2px);
+}
+
+.kb-dfm-overlay.open{
+  display:flex;
+}
+
+.kb-dfm-panel{
+  width:min(760px,96vw);
+  max-height:min(90vh,900px);
+  overflow:auto;
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--panel);
+  box-shadow:0 18px 60px rgba(0,0,0,.38);
+}
+
+.kb-dfm-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+}
+
+.kb-dfm-title{
+  font-size:18px;
+  font-weight:700;
+}
+
+.kb-dfm-close{
+  width:34px;
+  height:34px;
+  padding:0;
+  border-radius:8px;
+  font-size:18px;
+  line-height:1;
+}
+
+.kb-dfm-body{
+  padding:16px;
+}
+
+.kb-dfm-description{
+  margin-bottom:14px;
+  padding:11px 12px;
+  border-radius:9px;
+  background:#12151b;
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.6;
+}
+
+.kb-dfm-section{
+  margin-top:14px;
+  padding:13px;
+  border:1px solid var(--border);
+  border-radius:10px;
+}
+
+.kb-dfm-section-title{
+  margin-bottom:9px;
+  font-size:13px;
+  font-weight:700;
+}
+
+.kb-dfm-presets{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.kb-dfm-preset{
+  flex:1 1 220px;
+  padding:11px 12px;
+  text-align:left;
+}
+
+.kb-dfm-preset strong{
+  display:block;
+  margin-bottom:3px;
+}
+
+.kb-dfm-preset span{
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.45;
+}
+
+.kb-dfm-preset.active{
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent) inset;
+}
+
+.kb-dfm-settings{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 120px;
+  gap:10px 12px;
+  align-items:center;
+}
+
+.kb-dfm-setting-label strong{
+  display:block;
+  font-size:13px;
+  font-weight:650;
+}
+
+.kb-dfm-setting-label span{
+  display:block;
+  margin-top:3px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.45;
+}
+
+.kb-dfm-setting-input{
+  width:100%;
+  padding:8px 9px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:#11141a;
+  color:var(--text);
+  text-align:right;
+}
+
+.kb-dfm-setting-input:focus{
+  outline:2px solid var(--accent);
+  outline-offset:1px;
+}
+
+.kb-dfm-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  margin-top:16px;
+}
+
+.kb-dfm-primary{
+  background:#253c68;
+  border-color:#49679e;
+}
+
+.kb-dfm-primary:hover{
+  background:#304d83;
+}
+
+/* ---------------- DFM result ---------------- */
+.kb-dfm-result{
+  display:none;
+  margin-top:14px;
+}
+
+.kb-dfm-result.open{
+  display:block;
+}
+
+.kb-dfm-summary{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+}
+
+.kb-dfm-summary-card{
+  padding:10px;
+  border:1px solid var(--border);
+  border-radius:9px;
+  background:#12151a;
+  text-align:center;
+}
+
+.kb-dfm-summary-number{
+  font-size:22px;
+  font-weight:700;
+}
+
+.kb-dfm-summary-label{
+  margin-top:2px;
+  color:var(--muted);
+  font-size:11px;
+}
+
+.kb-dfm-ok{
+  color:#9ed7ad;
+}
+
+.kb-dfm-warn{
+  color:#e2c48a;
+}
+
+.kb-dfm-error{
+  color:#ff9c9c;
+}
+
+.kb-dfm-result-message{
+  margin-top:10px;
+  padding:10px 12px;
+  border-radius:9px;
+  background:#12151a;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.5;
+}
+
+.kb-dfm-item{
+  margin-top:8px;
+  padding:12px;
+  border:1px solid var(--border);
+  border-radius:9px;
+  background:#12151a;
+}
+
+.kb-dfm-item-head{
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+}
+
+.kb-dfm-icon{
+  font-size:15px;
+  line-height:1.3;
+}
+
+.kb-dfm-item-title{
+  font-weight:650;
+  font-size:13px;
+}
+
+.kb-dfm-item-body{
+  margin-top:7px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.55;
+}
+
+.kb-dfm-value{
+  color:var(--text);
+  font-weight:650;
+}
+
+.kb-dfm-focus{
+  margin-top:9px;
+  padding:6px 8px;
+  font-size:11px;
+}
+
+.kb-dfm-note{
+  margin-top:10px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.55;
+}
+
+.kb-dfm-loading{
+  display:none;
+  margin-top:12px;
+  padding:11px 12px;
+  border-radius:9px;
+  background:#12151a;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.kb-dfm-loading.open{
+  display:block;
+}
+
+/* ---------------- DFM marker ---------------- */
+.kb-dfm-marker{
+  position:absolute;
+  width:18px;
+  height:18px;
+  margin-left:-9px;
+  margin-top:-9px;
+  border-radius:50%;
+  border:2px solid #ff6262;
+  background:rgba(255,75,75,.22);
+  box-shadow:
+    0 0 0 4px rgba(255,75,75,.12),
+    0 0 16px rgba(255,75,75,.45);
+  pointer-events:none;
+  z-index:20;
+}
+
+.kb-dfm-marker-label{
+  position:absolute;
+  left:24px;
+  top:-3px;
+  white-space:nowrap;
+  padding:4px 6px;
+  border-radius:5px;
+  background:#32191d;
+  border:1px solid #7a3841;
+  color:#ffd0d0;
+  font-size:10px;
+}
+
+/* ---------------- mobile ---------------- */
+@media(max-width:680px){
+  .kb-dfm-panel{
+    width:100%;
+  }
+
+  .kb-dfm-settings{
+    grid-template-columns:1fr;
+  }
+
+  .kb-dfm-summary{
+    grid-template-columns:1fr;
+  }
+}
+</style>
+
+<script>
+(() => {
+  "use strict";
+
+  /* =========================================================
+     DFM settings
+  ========================================================= */
+
+  const KB_DFM_DEFAULTS = {
+    novice: {
+      copperClearance: 0.20,
+      traceWidth: 0.20,
+      minDrill: 0.30,
+      holeClearance: 0.25
+    },
+    detailed: {
+      copperClearance: 0.15,
+      traceWidth: 0.15,
+      minDrill: 0.25,
+      holeClearance: 0.20
+    }
+  };
+
+  let kbDfmMode = "novice";
+  let kbDfmResults = [];
+  let kbDfmMarker = null;
+
+  function kbDfmEscapeHtml(value){
+    return String(value).replace(/[&<>"']/g, c => ({
+      "&":"&amp;",
+      "<":"&lt;",
+      ">":"&gt;",
+      '"':"&quot;",
+      "'":"&#39;"
+    }[c]));
+  }
+
+  function kbDfmGetSettings(){
+    const get = id => {
+      const el = document.getElementById(id);
+      const n = parseFloat(el?.value);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    return {
+      copperClearance: get("kb-dfm-copper-clearance"),
+      traceWidth: get("kb-dfm-trace-width"),
+      minDrill: get("kb-dfm-min-drill"),
+      holeClearance: get("kb-dfm-hole-clearance")
+    };
+  }
+
+  function kbDfmSetSettings(settings){
+    const mapping = {
+      "kb-dfm-copper-clearance": settings.copperClearance,
+      "kb-dfm-trace-width": settings.traceWidth,
+      "kb-dfm-min-drill": settings.minDrill,
+      "kb-dfm-hole-clearance": settings.holeClearance
+    };
+
+    Object.entries(mapping).forEach(([id,value]) => {
+      const el = document.getElementById(id);
+      if(el) el.value = Number(value).toFixed(2);
+    });
+  }
+
+  function kbDfmMakeUI(){
+    const controls = document.querySelector(".controls");
+    if(!controls) return;
+
+    if(document.getElementById("kb-dfm-open")){
+      return;
+    }
+
+    const button = document.createElement("button");
+    button.id = "kb-dfm-open";
+    button.className = "kb-dfm-button";
+    button.textContent = "DFMチェック";
+    button.title = "基板を製造するときに問題になりそうな部分を確認します。";
+    controls.insertBefore(
+      button,
+      document.getElementById("clearButton") || controls.lastElementChild
+    );
+
+    const overlay = document.createElement("div");
+    overlay.id = "kb-dfm-overlay";
+    overlay.className = "kb-dfm-overlay";
+
+    overlay.innerHTML = `
+      <div class="kb-dfm-panel" role="dialog" aria-modal="true" aria-labelledby="kb-dfm-title">
+        <div class="kb-dfm-head">
+          <div id="kb-dfm-title" class="kb-dfm-title">DFMチェック</div>
+          <button id="kb-dfm-close" class="kb-dfm-close" aria-label="閉じる">×</button>
+        </div>
+
+        <div class="kb-dfm-body">
+
+          <div class="kb-dfm-description">
+            DFMチェックについて<br>
+            この機能は、基板データの中から製造時に注意したほうがよい箇所を自動で探します。<br>
+            自動チェックの結果は参考情報です。正確な判定を保証するものではありません。<br>
+            「問題なし」と表示された場合でも、必ず基板データをご自身で確認してください。
+          </div>
+
+          <div class="kb-dfm-section">
+            <div class="kb-dfm-section-title">チェックの設定</div>
+
+            <div class="kb-dfm-presets">
+              <button id="kb-dfm-novice" class="kb-dfm-preset active">
+                <strong>初心者向け</strong>
+                <span>一般的な基板確認に使いやすい設定です。</span>
+              </button>
+
+              <button id="kb-dfm-detailed" class="kb-dfm-preset">
+                <strong>詳しく設定する</strong>
+                <span>自分で確認する基準を変更できます。</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="kb-dfm-section">
+            <div class="kb-dfm-section-title">確認する基準</div>
+
+            <div class="kb-dfm-settings">
+
+              <div class="kb-dfm-setting-label">
+                <strong>銅箔と銅箔の間隔</strong>
+                <span>配線やパッド同士が近すぎないか確認します。</span>
+              </div>
+              <input
+                id="kb-dfm-copper-clearance"
+                class="kb-dfm-setting-input"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value="0.20"
+              >
+
+              <div class="kb-dfm-setting-label">
+                <strong>配線の太さ</strong>
+                <span>細すぎる配線がないか確認します。</span>
+              </div>
+              <input
+                id="kb-dfm-trace-width"
+                class="kb-dfm-setting-input"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value="0.20"
+              >
+
+              <div class="kb-dfm-setting-label">
+                <strong>穴の大きさ</strong>
+                <span>小さすぎるドリル穴がないか確認します。</span>
+              </div>
+              <input
+                id="kb-dfm-min-drill"
+                class="kb-dfm-setting-input"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value="0.30"
+              >
+
+              <div class="kb-dfm-setting-label">
+                <strong>穴と穴の間隔</strong>
+                <span>ドリル穴同士が近すぎないか確認します。</span>
+              </div>
+              <input
+                id="kb-dfm-hole-clearance"
+                class="kb-dfm-setting-input"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value="0.25"
+              >
+
+            </div>
+          </div>
+
+          <div class="kb-dfm-actions">
+            <button id="kb-dfm-cancel">閉じる</button>
+            <button id="kb-dfm-run" class="kb-dfm-primary">DFMチェック開始</button>
+          </div>
+
+          <div id="kb-dfm-loading" class="kb-dfm-loading">
+            基板データを確認しています…
+          </div>
+
+          <div id="kb-dfm-result" class="kb-dfm-result">
+            <div class="kb-dfm-summary">
+              <div class="kb-dfm-summary-card">
+                <div id="kb-dfm-error-count" class="kb-dfm-summary-number kb-dfm-error">0</div>
+                <div class="kb-dfm-summary-label">問題の可能性があります</div>
+              </div>
+
+              <div class="kb-dfm-summary-card">
+                <div id="kb-dfm-warn-count" class="kb-dfm-summary-number kb-dfm-warn">0</div>
+                <div class="kb-dfm-summary-label">要確認</div>
+              </div>
+
+              <div class="kb-dfm-summary-card">
+                <div id="kb-dfm-ok-count" class="kb-dfm-summary-number kb-dfm-ok">0</div>
+                <div class="kb-dfm-summary-label">今回のチェックでは問題なし</div>
+              </div>
+            </div>
+
+            <div id="kb-dfm-result-message" class="kb-dfm-result-message"></div>
+            <div id="kb-dfm-list"></div>
+
+            <div class="kb-dfm-note">
+              ※ このDFMチェックはGerber / Drillデータをもとにした簡易確認です。
+              このDFMチェックの結果だけを信用して基板を製造しないでください。
+            <h2>表示結果は参考情報です。最終的な確認・判断はご自身で行ってください。</h2>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    kbDfmSetSettings(KB_DFM_DEFAULTS.novice);
+
+    document.getElementById("kb-dfm-open").addEventListener("click", () => {
+      overlay.classList.add("open");
+    });
+
+    function close(){
+      overlay.classList.remove("open");
+    }
+
+    document.getElementById("kb-dfm-close").addEventListener("click", close);
+    document.getElementById("kb-dfm-cancel").addEventListener("click", close);
+
+    overlay.addEventListener("click", e => {
+      if(e.target === overlay){
+        close();
+      }
+    });
+
+    document.addEventListener("keydown", e => {
+      if(e.key === "Escape"){
+        close();
+      }
+    });
+
+    document.getElementById("kb-dfm-novice").addEventListener("click", () => {
+      kbDfmMode = "novice";
+
+      document.getElementById("kb-dfm-novice").classList.add("active");
+      document.getElementById("kb-dfm-detailed").classList.remove("active");
+
+      kbDfmSetSettings(KB_DFM_DEFAULTS.novice);
+    });
+
+    document.getElementById("kb-dfm-detailed").addEventListener("click", () => {
+      kbDfmMode = "detailed";
+
+      document.getElementById("kb-dfm-novice").classList.remove("active");
+      document.getElementById("kb-dfm-detailed").classList.add("active");
+
+      kbDfmSetSettings(KB_DFM_DEFAULTS.detailed);
+    });
+
+    document.getElementById("kb-dfm-run").addEventListener("click", () => {
+      kbDfmRun();
+    });
+  }
+
+  /* =========================================================
+     DFM parsing helpers
+  ========================================================= */
+
+  function kbDfmMm(value){
+    return Number(value).toFixed(2);
+  }
+
+  function kbDfmExtractGerberApertures(text){
+    const values = [];
+
+    if(typeof text !== "string"){
+      return values;
+    }
+
+    /*
+      例:
+      %ADD10C,0.200*%
+      %ADD11R,0.200X0.300*%
+      %ADD12O,0.300X0.500*%
+    */
+
+    const re = /%ADD\d+([A-Z]),([^*]+)\*%/gi;
+    let match;
+
+    while((match = re.exec(text)) !== null){
+      const shape = match[1].toUpperCase();
+      const params = match[2]
+        .split(/[Xx]/)
+        .map(v => parseFloat(v))
+        .filter(Number.isFinite);
+
+      if(!params.length){
+        continue;
+      }
+
+      let minimum = Math.min(...params);
+
+      /*
+       * C = 円
+       * R / O = 長方形・オーバル
+       *
+       * ここでは最小寸法を
+       * 「このアパーチャーで表現できる最小幅」の近似値として扱います。
+       */
+      if(shape === "C"){
+        minimum = params[0];
+      }
+
+      values.push({
+        shape,
+        params,
+        minimum
+      });
+    }
+
+    return values;
+  }
+
+  function kbDfmExtractDrillDiameters(text){
+    const values = [];
+
+    if(typeof text !== "string"){
+      return values;
+    }
+
+    /*
+      Excellon例:
+      T1C0.300
+      T02C0.400
+    */
+    const re = /T(\d+)\s*C\s*([0-9.]+)/gi;
+    let match;
+
+    while((match = re.exec(text)) !== null){
+      const diameter = parseFloat(match[2]);
+
+      if(Number.isFinite(diameter)){
+        values.push({
+          tool: match[1],
+          diameter
+        });
+      }
+    }
+
+    return values;
+  }
+
+  function kbDfmExtractDrillPositions(text){
+    const positions = [];
+
+    if(typeof text !== "string"){
+      return positions;
+    }
+
+    /*
+      Excellonの簡易座標抽出。
+      形式の差が大きいため、取得できたものだけ利用します。
+    */
+    const re = /X([+-]?\d+(?:\.\d+)?)Y([+-]?\d+(?:\.\d+)?)/gi;
+    let match;
+
+    while((match = re.exec(text)) !== null){
+      const x = parseFloat(match[1]);
+      const y = parseFloat(match[2]);
+
+      if(Number.isFinite(x) && Number.isFinite(y)){
+        positions.push({x,y});
+      }
+    }
+
+    return positions;
+  }
+
+  function kbDfmCheckApertures(settings, results){
+    const copperLayers = Array.isArray(layers)
+      ? layers.filter(l =>
+          l &&
+          l.ok &&
+          (l.type === "topCopper" || l.type === "bottomCopper")
+        )
+      : [];
+
+    if(!copperLayers.length){
+      results.push({
+        severity:"warn",
+        title:"銅箔データを確認できません",
+        body:"表面または裏面の銅箔データが見つからないため、配線の太さを確認できませんでした。"
+      });
+      return 0;
+    }
+
+    let count = 0;
+
+    for(const layer of copperLayers){
+      const apertures = kbDfmExtractGerberApertures(layer.text);
+
+      if(!apertures.length){
+        continue;
+      }
+
+      let minimum = Infinity;
+
+      for(const a of apertures){
+        if(Number.isFinite(a.minimum)){
+          minimum = Math.min(minimum, a.minimum);
+        }
+      }
+
+      if(!Number.isFinite(minimum)){
+        continue;
+      }
+
+      if(minimum < settings.traceWidth){
+        results.push({
+          severity:"error",
+          title:"配線の太さが設定値より細くなっています",
+          body:
+            `${layer.type === "topCopper" ? "表面" : "裏面"}の銅箔データで、` +
+            `約 <span class="kb-dfm-value">${kbDfmMm(minimum)} mm</span> の ` +
+            `小さいアパーチャーが見つかりました。<br>` +
+            `設定した基準は <span class="kb-dfm-value">${kbDfmMm(settings.traceWidth)} mm</span> です。`,
+          layerType:layer.type
+        });
+
+        count++;
+      }else{
+        results.push({
+          severity:"ok",
+          title:`${layer.type === "topCopper" ? "表面" : "裏面"}の配線の太さ`,
+          body:
+            `確認できた最小アパーチャーは ` +
+            `<span class="kb-dfm-value">${kbDfmMm(minimum)} mm</span> でした。<br>` +
+            `設定した基準 ${kbDfmMm(settings.traceWidth)} mm を下回っていません。`,
+          layerType:layer.type
+        });
+      }
+    }
+
+    return count;
+  }
+
+  function kbDfmCheckDrill(settings, results){
+    const drillLayers = Array.isArray(layers)
+      ? layers.filter(l => l && l.ok && l.type === "drill")
+      : [];
+
+    if(!drillLayers.length){
+      results.push({
+        severity:"warn",
+        title:"ドリルデータがありません",
+        body:"穴の大きさを確認するためのドリルデータが見つかりませんでした。"
+      });
+
+      return {
+        errors:0,
+        warnings:1
+      };
+    }
+
+    let errors = 0;
+    let warnings = 0;
+    let allPositions = [];
+
+    for(const layer of drillLayers){
+      const tools = kbDfmExtractDrillDiameters(layer.text);
+      const positions = kbDfmExtractDrillPositions(layer.text);
+
+      allPositions = allPositions.concat(positions);
+
+      if(!tools.length){
+        warnings++;
+
+        results.push({
+          severity:"warn",
+          title:"穴の大きさを確認できませんでした",
+          body:
+            `${kbDfmEscapeHtml(layer.name)} からドリル径を読み取れませんでした。`
+        });
+
+        continue;
+      }
+
+      let minimum = Infinity;
+      let minimumTool = null;
+
+      for(const tool of tools){
+        if(tool.diameter < minimum){
+          minimum = tool.diameter;
+          minimumTool = tool;
+        }
+      }
+
+      if(minimum < settings.minDrill){
+        errors++;
+
+        results.push({
+          severity:"error",
+          title:"穴が小さすぎます",
+          body:
+            `最小ドリル径は <span class="kb-dfm-value">${kbDfmMm(minimum)} mm</span>。<br>` +
+            `設定した基準は <span class="kb-dfm-value">${kbDfmMm(settings.minDrill)} mm</span> です。` +
+            (minimumTool
+              ? `<br>使用ツール: T${kbDfmEscapeHtml(minimumTool.tool)}`
+              : "")
+        });
+      }else{
+        results.push({
+          severity:"ok",
+          title:"穴の大きさ",
+          body:
+            `最小ドリル径は <span class="kb-dfm-value">${kbDfmMm(minimum)} mm</span>。<br>` +
+            `設定した基準 ${kbDfmMm(settings.minDrill)} mm を下回っていません。`
+        });
+      }
+    }
+
+    if(allPositions.length >= 2){
+      let nearest = Infinity;
+      let nearestPoint = null;
+
+      for(let i=0;i<allPositions.length;i++){
+        for(let j=i+1;j<allPositions.length;j++){
+          const dx = allPositions[i].x - allPositions[j].x;
+          const dy = allPositions[i].y - allPositions[j].y;
+
+          const d = Math.sqrt(dx*dx + dy*dy);
+
+          if(d < nearest){
+            nearest = d;
+            nearestPoint = {
+              x:(allPositions[i].x + allPositions[j].x) / 2,
+              y:(allPositions[i].y + allPositions[j].y) / 2
+            };
+          }
+        }
+      }
+
+      if(Number.isFinite(nearest)){
+        if(nearest < settings.holeClearance){
+          errors++;
+
+          results.push({
+            severity:"error",
+            title:"穴と穴のすき間が狭すぎます",
+            body:
+              `近い穴同士の中心間距離は約 ` +
+              `<span class="kb-dfm-value">${kbDfmMm(nearest)} mm</span>。<br>` +
+              `設定した基準は <span class="kb-dfm-value">${kbDfmMm(settings.holeClearance)} mm</span> です。`,
+            point:nearestPoint
+          });
+        }else{
+          results.push({
+            severity:"ok",
+            title:"穴と穴のすき間",
+            body:
+              `最も近い穴同士の中心間距離は約 ` +
+              `<span class="kb-dfm-value">${kbDfmMm(nearest)} mm</span>。<br>` +
+              `設定した基準 ${kbDfmMm(settings.holeClearance)} mm を下回っていません。`
+          });
+        }
+      }
+    }else{
+      warnings++;
+
+      results.push({
+        severity:"warn",
+        title:"穴と穴のすき間を確認できませんでした",
+        body:"ドリル座標を十分に読み取れなかったため、この項目は自動確認できませんでした。"
+      });
+    }
+
+    return {errors,warnings};
+  }
+
+  function kbDfmCheckCopperClearance(settings, results){
+
+
+    const copperLayers = Array.isArray(layers)
+      ? layers.filter(l =>
+          l &&
+          l.ok &&
+          (l.type === "topCopper" || l.type === "bottomCopper")
+        )
+      : [];
+
+    if(!copperLayers.length){
+      results.push({
+        severity:"warn",
+        title:"銅箔と銅箔のすき間を確認できません",
+        body:"銅箔データが読み込まれていないため確認できません。"
+      });
+
+      return;
+    }
+
+    for(const layer of copperLayers){
+      const apertures = kbDfmExtractGerberApertures(layer.text);
+
+
+      if(apertures.length){
+        results.push({
+          severity:"warn",
+          title:`${layer.type === "topCopper" ? "表面" : "裏面"}の銅箔間隔`,
+          body:
+            `銅箔データは確認できましたが、今回の簡易DFMでは ` +
+            `形状同士の距離を完全には判定しません。<br>` +
+            `設定値は <span class="kb-dfm-value">${kbDfmMm(settings.copperClearance)} mm</span> です。`
+        });
+      }
+    }
+  }
+
+  /* DFM runner*/
+
+  async function kbDfmRun(){
+    const loading = document.getElementById("kb-dfm-loading");
+    const resultEl = document.getElementById("kb-dfm-result");
+    const listEl = document.getElementById("kb-dfm-list");
+    const resultMessage = document.getElementById("kb-dfm-result-message");
+
+    loading.classList.add("open");
+    resultEl.classList.remove("open");
+    listEl.innerHTML = "";
+
+    kbDfmResults = [];
+    kbDfmRemoveMarker();
+
+    if(!Array.isArray(layers) || !layers.length){
+      loading.classList.remove("open");
+
+      resultEl.classList.add("open");
+
+      document.getElementById("kb-dfm-error-count").textContent = "0";
+      document.getElementById("kb-dfm-warn-count").textContent = "1";
+      document.getElementById("kb-dfm-ok-count").textContent = "0";
+
+      resultMessage.innerHTML =
+        `<h2>基板データをアップロードしてください。</h2><p>基板データが読み込まれてからDFMチェックを開始できます。</p>`;
+
+      return;
+    }
+
+    const settings = kbDfmGetSettings();
+
+    await new Promise(resolve => setTimeout(resolve, 80));
+
+    kbDfmCheckApertures(settings, kbDfmResults);
+    kbDfmCheckDrill(settings, kbDfmResults);
+    kbDfmCheckCopperClearance(settings, kbDfmResults);
+
+    const errorCount = kbDfmResults.filter(x => x.severity === "error").length;
+    const warnCount = kbDfmResults.filter(x => x.severity === "warn").length;
+    const okCount = kbDfmResults.filter(x => x.severity === "ok").length;
+
+    document.getElementById("kb-dfm-error-count").textContent = String(errorCount);
+    document.getElementById("kb-dfm-warn-count").textContent = String(warnCount);
+    document.getElementById("kb-dfm-ok-count").textContent = String(okCount);
+
+    if(errorCount > 0){
+      resultMessage.innerHTML =
+        `🔴 <strong>問題が ${errorCount} 件見つかりました。</strong><br>` +
+        `まずは「問題」の項目から確認してください。`;
+    }else if(warnCount > 0){
+      resultMessage.innerHTML =
+        `🟡 自動確認だけでは判断できない項目があります。<br>` +
+        `「要確認」と表示された項目も一度見てください。`;
+    }else{
+      resultMessage.innerHTML =
+        `🟢 今回設定した基準では問題は見つかりませんでした。`;
+    }
+
+    listEl.innerHTML = kbDfmResults.map((item,index) => {
+      const icon =
+        item.severity === "error" ? "🔴" :
+        item.severity === "warn" ? "🟡" :
+        "🟢";
+
+      const button = item.point
+        ? `<button class="kb-dfm-focus" data-dfm-index="${index}">この場所を表示</button>`
+        : "";
+
+      return `
+        <div class="kb-dfm-item">
+          <div class="kb-dfm-item-head">
+            <div class="kb-dfm-icon">${icon}</div>
+            <div class="kb-dfm-item-title">
+              ${kbDfmEscapeHtml(item.title)}
+            </div>
+          </div>
+
+          <div class="kb-dfm-item-body">
+            ${item.body || ""}
+          </div>
+
+          ${button}
+        </div>
+      `;
+    }).join("");
+
+    listEl.querySelectorAll(".kb-dfm-focus").forEach(button => {
+      button.addEventListener("click", () => {
+        const index = Number(button.dataset.dfmIndex);
+        const item = kbDfmResults[index];
+
+        if(!item?.point){
+          return;
+        }
+
+        kbDfmShowMarker(item.point, item.title);
+      });
+    });
+
+    loading.classList.remove("open");
+    resultEl.classList.add("open");
+  }
+
+  /* =========================================================
+     View marker
+  ========================================================= */
+
+  function kbDfmRemoveMarker(){
+    if(kbDfmMarker){
+      kbDfmMarker.remove();
+      kbDfmMarker = null;
+    }
+  }
+
+  function kbDfmShowMarker(point, label){
+    kbDfmRemoveMarker();
+
+    if(
+      !point ||
+      typeof worldToScreen !== "function"
+    ){
+      return;
+    }
+
+    const [sx,sy] = worldToScreen(point.x,point.y);
+
+    const marker = document.createElement("div");
+    marker.className = "kb-dfm-marker";
+    marker.style.left = `${sx}px`;
+    marker.style.top = `${sy}px`;
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "kb-dfm-marker-label";
+    labelEl.textContent = label;
+
+    marker.appendChild(labelEl);
+
+    canvasWrap.appendChild(marker);
+    kbDfmMarker = marker;
+  }
+
+  /* =========================================================
+     initialize
+  ========================================================= */
+
+  kbDfmMakeUI();
+
+})();
+</script>
