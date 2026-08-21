@@ -2595,8 +2595,8 @@ resizeCanvas();
             <div class="kb-dfm-settings">
 
               <div class="kb-dfm-setting-label">
-                <strong>銅箔と銅箔の間隔</strong>
-                <span>配線やパッド同士が近すぎないか確認します。</span>
+                <strong>銅箔クリアランス</strong>
+                <span>銅箔同士の間隔を確認します。現在は「要確認」を中心とした簡易チェックです。</span>
               </div>
               <input
                 id="kb-dfm-copper-clearance"
@@ -2608,8 +2608,8 @@ resizeCanvas();
               >
 
               <div class="kb-dfm-setting-label">
-                <strong>配線の太さ</strong>
-                <span>細すぎる配線がないか確認します。</span>
+              <strong>銅箔幅の確認基準</strong>
+              <span>Gerberのアパーチャーを参考に確認します。実際の配線幅を保証するものではありません。</span>
               </div>
               <input
                 id="kb-dfm-trace-width"
@@ -2681,8 +2681,8 @@ resizeCanvas();
 
             <div class="kb-dfm-note">
               ※ このDFMチェックはGerber / Drillデータをもとにした簡易確認です。
-              このDFMチェックの結果だけを信用して基板を製造しないでください。
-            <h2>表示結果は参考情報です。最終的な確認・判断はご自身で行ってください。</h2>
+              このDFMチェックの結果だけを信用して基板を製造しないでください。<br>
+            <h2><strong>表示結果は参考情報です。最終的な確認・判断はご自身で行ってください。</strong></h2>
             </div>
           </div>
 
@@ -2748,85 +2748,124 @@ resizeCanvas();
     return Number(value).toFixed(2);
   }
 
-  function kbDfmExtractGerberApertures(text){
-    const values = [];
+function kbDfmExtractGerberApertures(text){
+  const values = [];
 
-    if(typeof text !== "string"){
-      return values;
-    }
-
-    /*
-      例:
-      %ADD10C,0.200*%
-      %ADD11R,0.200X0.300*%
-      %ADD12O,0.300X0.500*%
-    */
-
-    const re = /%ADD\d+([A-Z]),([^*]+)\*%/gi;
-    let match;
-
-    while((match = re.exec(text)) !== null){
-      const shape = match[1].toUpperCase();
-      const params = match[2]
-        .split(/[Xx]/)
-        .map(v => parseFloat(v))
-        .filter(Number.isFinite);
-
-      if(!params.length){
-        continue;
-      }
-
-      let minimum = Math.min(...params);
-
-      /*
-       * C = 円
-       * R / O = 長方形・オーバル
-       *
-       * ここでは最小寸法を
-       * 「このアパーチャーで表現できる最小幅」の近似値として扱います。
-       */
-      if(shape === "C"){
-        minimum = params[0];
-      }
-
-      values.push({
-        shape,
-        params,
-        minimum
-      });
-    }
-
+  if(typeof text !== "string"){
     return values;
   }
 
-  function kbDfmExtractDrillDiameters(text){
-    const values = [];
+  /*
+    Gerber aperture definition
 
-    if(typeof text !== "string"){
-      return values;
+    例:
+    %ADD10C,0.200*%
+    %ADD11R,0.200X0.300*%
+    %ADD12O,0.300X0.500*%
+
+    ここで取得する値は「実際の配線幅」ではなく、
+    Gerberで使用されているアパーチャーの寸法です。
+
+    DFMでは参考値としてのみ使用します。
+  */
+
+  const re = /%ADD(\d+)([A-Z]),([^*]+)\*%/gi;
+  let match;
+
+  while((match = re.exec(text)) !== null){
+
+    const aperture = match[1];
+    const shape = match[2].toUpperCase();
+
+    const params = match[3]
+      .split(/[Xx]/)
+      .map(v => parseFloat(v))
+      .filter(Number.isFinite);
+
+    if(!params.length){
+      continue;
     }
 
-    /*
-      Excellon例:
+    let minimum = Infinity;
+
+    for(const value of params){
+      if(value > 0){
+        minimum = Math.min(minimum,value);
+      }
+    }
+
+    if(!Number.isFinite(minimum)){
+      continue;
+    }
+
+    values.push({
+      aperture,
+      shape,
+      params,
+      minimum
+    });
+  }
+
+  return values;
+}
+
+function kbDfmExtractDrillDiameters(text){
+  const values = [];
+
+  if(typeof text !== "string"){
+    return values;
+  }
+
+  /*
+    Excellonの単位を確認。
+
+    METRIC → mm
+    INCH   → inch
+
+    KiCadの出力形式によって表記が多少異なるため、
+    代表的な形式を確認します。
+  */
+
+  const metric =
+    /(?:^|\r?\n)\s*(?:M71|METRIC\b)/i.test(text);
+
+  const inch =
+    /(?:^|\r?\n)\s*(?:M72|INCH\b)/i.test(text);
+
+  /*
+    Tool definition:
       T1C0.300
       T02C0.400
-    */
-    const re = /T(\d+)\s*C\s*([0-9.]+)/gi;
-    let match;
+  */
 
-    while((match = re.exec(text)) !== null){
-      const diameter = parseFloat(match[2]);
+  const re = /T(\d+)\s*C\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/gi;
 
-      if(Number.isFinite(diameter)){
-        values.push({
-          tool: match[1],
-          diameter
-        });
-      }
+  let match;
+
+  while((match = re.exec(text)) !== null){
+
+    let diameter =
+      parseFloat(match[2]);
+
+    if(!Number.isFinite(diameter) || diameter <= 0){
+      continue;
     }
 
-    return values;
+    /*
+      INCH指定の場合はmmへ変換。
+    */
+    if(inch && !metric){
+      diameter *= 25.4;
+    }
+
+    values.push({
+      tool:match[1],
+      diameter
+    });
   }
+
+  return values;
+}
 
   function kbDfmExtractDrillPositions(text){
     const positions = [];
@@ -2854,73 +2893,125 @@ resizeCanvas();
     return positions;
   }
 
-  function kbDfmCheckApertures(settings, results){
-    const copperLayers = Array.isArray(layers)
-      ? layers.filter(l =>
-          l &&
-          l.ok &&
-          (l.type === "topCopper" || l.type === "bottomCopper")
+function kbDfmCheckApertures(settings, results){
+  const copperLayers = Array.isArray(layers)
+    ? layers.filter(l =>
+        l &&
+        l.ok &&
+        (
+          l.type === "topCopper" ||
+          l.type === "bottomCopper"
         )
-      : [];
+      )
+    : [];
 
-    if(!copperLayers.length){
+  if(!copperLayers.length){
+    results.push({
+      severity:"warn",
+      title:"銅箔データを確認できません",
+      body:
+        "表面または裏面の銅箔データが見つからないため、" +
+        "この項目は自動確認できませんでした。"
+    });
+
+    return 0;
+  }
+
+  let warnings = 0;
+
+  for(const layer of copperLayers){
+
+    const apertures =
+      kbDfmExtractGerberApertures(layer.text);
+
+    if(!apertures.length){
       results.push({
         severity:"warn",
-        title:"銅箔データを確認できません",
-        body:"表面または裏面の銅箔データが見つからないため、配線の太さを確認できませんでした。"
+        title:
+          `${layer.type === "topCopper" ? "表面" : "裏面"}の銅箔幅を要確認`,
+        body:
+          "使用されているアパーチャーを取得できなかったため、" +
+          "この項目は自動判定できませんでした。"
       });
-      return 0;
+
+      warnings++;
+      continue;
     }
 
-    let count = 0;
+    let minimum = Infinity;
 
-    for(const layer of copperLayers){
-      const apertures = kbDfmExtractGerberApertures(layer.text);
-
-      if(!apertures.length){
-        continue;
-      }
-
-      let minimum = Infinity;
-
-      for(const a of apertures){
-        if(Number.isFinite(a.minimum)){
-          minimum = Math.min(minimum, a.minimum);
-        }
-      }
-
-      if(!Number.isFinite(minimum)){
-        continue;
-      }
-
-      if(minimum < settings.traceWidth){
-        results.push({
-          severity:"error",
-          title:"配線の太さが設定値より細くなっています",
-          body:
-            `${layer.type === "topCopper" ? "表面" : "裏面"}の銅箔データで、` +
-            `約 <span class="kb-dfm-value">${kbDfmMm(minimum)} mm</span> の ` +
-            `小さいアパーチャーが見つかりました。<br>` +
-            `設定した基準は <span class="kb-dfm-value">${kbDfmMm(settings.traceWidth)} mm</span> です。`,
-          layerType:layer.type
-        });
-
-        count++;
-      }else{
-        results.push({
-          severity:"ok",
-          title:`${layer.type === "topCopper" ? "表面" : "裏面"}の配線の太さ`,
-          body:
-            `確認できた最小アパーチャーは ` +
-            `<span class="kb-dfm-value">${kbDfmMm(minimum)} mm</span> でした。<br>` +
-            `設定した基準 ${kbDfmMm(settings.traceWidth)} mm を下回っていません。`,
-          layerType:layer.type
-        });
+    for(const aperture of apertures){
+      if(Number.isFinite(aperture.minimum)){
+        minimum = Math.min(
+          minimum,
+          aperture.minimum
+        );
       }
     }
 
-    return count;
+    if(!Number.isFinite(minimum)){
+      continue;
+    }
+
+    /*
+      ここで「配線幅が設定値未満」と断定しない。
+
+      アパーチャー寸法は実際の配線幅と一致するとは限らないため、
+      あくまで「要確認」とする。
+    */
+
+    if(minimum < settings.traceWidth){
+
+      results.push({
+        severity:"warn",
+
+        title:
+          `${layer.type === "topCopper" ? "表面" : "裏面"}の銅箔幅を要確認`,
+
+        body:
+          `使用されている最小アパーチャーは ` +
+          `<span class="kb-dfm-value">${kbDfmMm(minimum)} mm</span> です。<br>` +
+
+          `設定した確認基準は ` +
+          `<span class="kb-dfm-value">${kbDfmMm(settings.traceWidth)} mm</span> です。<br>` +
+
+          `<strong>` +
+          `これは実際の配線幅を直接測定した結果ではありません。` +
+          `Gerber上の実際の配線を使用者自身で確認してください。` +
+          `</strong>`,
+
+        layerType:layer.type
+      });
+
+      warnings++;
+
+    }else{
+
+      results.push({
+        severity:"ok",
+
+        title:
+          `${layer.type === "topCopper" ? "表面" : "裏面"}の銅箔幅`,
+
+        body:
+          `最小アパーチャーは ` +
+          `<span class="kb-dfm-value">${kbDfmMm(minimum)} mm</span> でした。<br>` +
+
+          `設定した確認基準 ` +
+          `<span class="kb-dfm-value">${kbDfmMm(settings.traceWidth)} mm</span> ` +
+          `を下回るアパーチャーは検出されませんでした。<br>` +
+
+          `<strong>` +
+          `※ 実際の配線幅を保証するものではありません。` +
+          `</strong>`,
+
+        layerType:layer.type
+      });
+    }
   }
+
+  return warnings;
+}
 
   function kbDfmCheckDrill(settings, results){
     const drillLayers = Array.isArray(layers)
@@ -2997,101 +3088,178 @@ resizeCanvas();
       }
     }
 
-    if(allPositions.length >= 2){
-      let nearest = Infinity;
-      let nearestPoint = null;
+if(allPositions.length >= 2){
 
-      for(let i=0;i<allPositions.length;i++){
-        for(let j=i+1;j<allPositions.length;j++){
-          const dx = allPositions[i].x - allPositions[j].x;
-          const dy = allPositions[i].y - allPositions[j].y;
+  let nearest = Infinity;
+  let nearestPoint = null;
 
-          const d = Math.sqrt(dx*dx + dy*dy);
+  for(let i=0;i<allPositions.length;i++){
 
-          if(d < nearest){
-            nearest = d;
-            nearestPoint = {
-              x:(allPositions[i].x + allPositions[j].x) / 2,
-              y:(allPositions[i].y + allPositions[j].y) / 2
-            };
-          }
-        }
+    for(let j=i+1;j<allPositions.length;j++){
+
+      const dx =
+        allPositions[i].x -
+        allPositions[j].x;
+
+      const dy =
+        allPositions[i].y -
+        allPositions[j].y;
+
+      const d =
+        Math.sqrt(dx*dx + dy*dy);
+
+      if(d < nearest){
+        nearest = d;
+
+        nearestPoint = {
+          x:(allPositions[i].x + allPositions[j].x) / 2,
+          y:(allPositions[i].y + allPositions[j].y) / 2
+        };
       }
-
-      if(Number.isFinite(nearest)){
-        if(nearest < settings.holeClearance){
-          errors++;
-
-          results.push({
-            severity:"error",
-            title:"穴と穴のすき間が狭すぎます",
-            body:
-              `近い穴同士の中心間距離は約 ` +
-              `<span class="kb-dfm-value">${kbDfmMm(nearest)} mm</span>。<br>` +
-              `設定した基準は <span class="kb-dfm-value">${kbDfmMm(settings.holeClearance)} mm</span> です。`,
-            point:nearestPoint
-          });
-        }else{
-          results.push({
-            severity:"ok",
-            title:"穴と穴のすき間",
-            body:
-              `最も近い穴同士の中心間距離は約 ` +
-              `<span class="kb-dfm-value">${kbDfmMm(nearest)} mm</span>。<br>` +
-              `設定した基準 ${kbDfmMm(settings.holeClearance)} mm を下回っていません。`
-          });
-        }
-      }
-    }else{
-      warnings++;
-
-      results.push({
-        severity:"warn",
-        title:"穴と穴のすき間を確認できませんでした",
-        body:"ドリル座標を十分に読み取れなかったため、この項目は自動確認できませんでした。"
-      });
     }
+  }
+
+  if(Number.isFinite(nearest)){
+
+    /*
+      現在の簡易解析では穴径と座標を完全に
+      対応付けられていないため、
+
+      「穴の端から端までの距離」として
+      断定することはしない。
+    */
+
+    results.push({
+      severity:"warn",
+
+      title:"穴と穴の間隔を要確認",
+
+      body:
+        `最も近い穴の中心間距離は約 ` +
+        `<span class="kb-dfm-value">${kbDfmMm(nearest)} mm</span> でした。<br>` +
+
+        `ただし、この値は穴の中心間距離です。<br>` +
+
+        `<strong>` +
+        `実際の穴と穴の端同士の間隔は、` +
+        `Gerber / Drillデータを使用者自身で確認してください。` +
+        `</strong>`,
+
+      point:nearestPoint
+    });
+
+    warnings++;
+
+  }
+
+}else{
+
+  warnings++;
+
+  results.push({
+    severity:"warn",
+
+    title:"穴と穴の間隔を確認できませんでした",
+
+    body:
+      "ドリル座標を十分に読み取れなかったため、" +
+      "この項目は自動確認できませんでした。"
+  });
+}
 
     return {errors,warnings};
   }
 
-  function kbDfmCheckCopperClearance(settings, results){
+function kbDfmCheckCopperClearance(settings, results){
 
-
-    const copperLayers = Array.isArray(layers)
-      ? layers.filter(l =>
-          l &&
-          l.ok &&
-          (l.type === "topCopper" || l.type === "bottomCopper")
+  const copperLayers = Array.isArray(layers)
+    ? layers.filter(l =>
+        l &&
+        l.ok &&
+        (
+          l.type === "topCopper" ||
+          l.type === "bottomCopper"
         )
-      : [];
+      )
+    : [];
 
-    if(!copperLayers.length){
+  if(!copperLayers.length){
+
+    results.push({
+      severity:"warn",
+
+      title:"銅箔クリアランスを確認できません",
+
+      body:
+        "表面または裏面の銅箔データが見つからないため、" +
+        "この項目は自動確認できませんでした。"
+    });
+
+    return;
+  }
+
+  for(const layer of copperLayers){
+
+    const apertures =
+      kbDfmExtractGerberApertures(layer.text);
+
+    if(!apertures.length){
+
       results.push({
         severity:"warn",
-        title:"銅箔と銅箔のすき間を確認できません",
-        body:"銅箔データが読み込まれていないため確認できません。"
+
+        title:
+          `${layer.type === "topCopper" ? "表面" : "裏面"}の銅箔クリアランスを要確認`,
+
+        body:
+          "銅箔形状を取得できなかったため、" +
+          "銅箔同士の間隔を自動判定できませんでした。<br>" +
+
+          `設定した確認基準は ` +
+          `<span class="kb-dfm-value">${kbDfmMm(settings.copperClearance)} mm</span> です。<br>` +
+
+          "<strong>" +
+          "Gerber表示上で、配線・パッド・ベタ銅箔同士の間隔を確認してください。" +
+          "</strong>"
       });
 
-      return;
+      continue;
     }
 
-    for(const layer of copperLayers){
-      const apertures = kbDfmExtractGerberApertures(layer.text);
+    /*
+      ここではアパーチャー情報の存在だけを確認します。
 
+      Aperture定義だけでは、
+      「実際に配置された銅箔同士の最短距離」
+      を正確には求められません。
 
-      if(apertures.length){
-        results.push({
-          severity:"warn",
-          title:`${layer.type === "topCopper" ? "表面" : "裏面"}の銅箔間隔`,
-          body:
-            `銅箔データは確認できましたが、今回の簡易DFMでは ` +
-            `形状同士の距離を完全には判定しません。<br>` +
-            `設定値は <span class="kb-dfm-value">${kbDfmMm(settings.copperClearance)} mm</span> です。`
-        });
-      }
-    }
+      したがって、誤った「OK」を出さず、
+      使用者による確認を促します。
+    */
+
+    results.push({
+      severity:"warn",
+
+      title:
+        `${layer.type === "topCopper" ? "表面" : "裏面"}の銅箔クリアランスを要確認`,
+
+      body:
+        `銅箔データは読み込めています。<br>` +
+
+        `設定した確認基準は ` +
+        `<span class="kb-dfm-value">${kbDfmMm(settings.copperClearance)} mm</span> です。<br>` +
+
+        "<strong>" +
+        "この簡易DFMでは銅箔形状同士の最短距離を完全には判定できません。"+
+        "「要確認」として表示しています。"+
+        "</strong><br>" +
+
+        "配線・パッド・ベタ銅箔の間隔をビューア上で必ず確認してください。",
+
+      layerType:layer.type
+    });
   }
+}
 
   /* DFM runner*/
 
