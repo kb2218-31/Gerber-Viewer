@@ -159,7 +159,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .routing-controls{position:relative;display:inline-flex}
 .routing-menu{
   position:absolute;z-index:20;top:calc(100% + 6px);right:0;
-  display:none;min-width:126px;padding:6px;
+  display:none;min-width:150px;max-height:70vh;overflow:auto;padding:6px;
   background:#12151a;border:1px solid var(--border);border-radius:8px;
   box-shadow:0 10px 24px rgba(0,0,0,.35)
 }
@@ -167,6 +167,15 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .routing-menu button{width:100%;text-align:left;white-space:nowrap}
 .routing-menu button:disabled{opacity:.46;cursor:not-allowed;color:var(--muted)}
 .routing-menu-arrow{display:inline-block;margin-right:5px;font-size:10px}
+.routing-submenu-wrap{position:relative}
+.routing-submenu-toggle::after{content:"▶";float:right;margin-left:14px;font-size:10px;color:var(--muted)}
+.routing-submenu{
+  position:absolute;z-index:21;top:calc(100% + 5px);left:0;
+  display:none;min-width:150px;max-height:60vh;overflow:auto;padding:6px;
+  background:#12151a;border:1px solid var(--border);border-radius:8px;
+  box-shadow:0 10px 24px rgba(0,0,0,.35)
+}
+.routing-submenu.open{display:grid;gap:5px}
 .status{color:var(--muted);font-size:12px;line-height:1.3}
 .mode-badge{
   padding:4px 7px;border:1px solid var(--border);border-radius:6px;
@@ -373,8 +382,7 @@ if(typeof window.gerberToSvg!=="function"){
         <div id="routingMenu" class="routing-menu" role="menu">
           <button id="routeTopButton" type="button" role="menuitem">配線 Top</button>
           <button id="routeBottomButton" type="button" role="menuitem">配線 Bottom</button>
-          <button id="routeInner1Button" type="button" role="menuitem">配線 3層</button>
-          <button id="routeInner2Button" type="button" role="menuitem">配線 4層</button>
+          <div id="innerRoutingMenuItems"></div>
         </div>
       </div>
       <button id="allButton">全レイヤー</button>
@@ -496,8 +504,15 @@ function u16(v, p){ return v.getUint16(p, true); }
 function u32(v, p){ return v.getUint32(p, true); }
 const SUPPORTED_GERBER_EXTENSIONS=new Set([
   "GBR","GTL","GBL","GTS","GBS","GTO","GBO","GTP","GBP",
-  "GKO","GM1","GML","G1","XLN","DRL"
+  "GKO","GM1","GML","XLN","DRL"
 ]);
+
+// 32-layer PCB support:
+// Top + Inner 1..30 + Bottom.
+// Some Gerber exporters use numbered .Gx extensions for inner copper.
+for(let i=1;i<=31;i++){
+  SUPPORTED_GERBER_EXTENSIONS.add(`G${i}`);
+}
 
 function isSupportedGerberEntry(name){
   const ext=(escName(name).match(/\.([A-Za-z0-9]+)$/)||[])[1]?.toUpperCase();
@@ -612,22 +627,44 @@ function classify(name, text){
     return ["topCopper","Top Copper"];
   }
 
-  if(
-    ext==="G2" ||
-    /(?:^|[_\-.])IN(?:NER)?1[_\-.]?CU(?:[_\-.]|$)/.test(stem) ||
-    /(?:^|[_\-.])L2(?:[_\-.]|$)/.test(stem) ||
-    /INNER\s*1\s*COPPER|INNER1_COPPER|IN1_CU/.test(s)
-  ){
-    return ["innerCopper1","Inner Copper 1"];
+  // Inner copper: support In1.Cu .. In30.Cu and common naming variants.
+  // Also preserve the existing G2 -> Inner 1 / G3 -> Inner 2 convention,
+  // extending it through G31 -> Inner 30.
+  const innerMatch =
+    stem.match(/(?:^|[_\-.])IN(?:NER)?[_\-.]?(\d{1,2})[_\-.]?(?:CU|COPPER)(?:[_\-.]|$)/) ||
+    s.match(/(?:^|[_\-.])IN(?:NER)?[_\-.]?(\d{1,2})[_\-.]?(?:CU|COPPER)(?:[_\-.]|$)/);
+
+  if(innerMatch){
+    const innerNumber=Number(innerMatch[1]);
+    if(innerNumber>=1 && innerNumber<=30){
+      return [`innerCopper${innerNumber}`,`Inner Copper ${innerNumber}`];
+    }
   }
 
-  if(
-    ext==="G3" ||
-    /(?:^|[_\-.])IN(?:NER)?2[_\-.]?CU(?:[_\-.]|$)/.test(stem) ||
-    /(?:^|[_\-.])L3(?:[_\-.]|$)/.test(stem) ||
-    /INNER\s*2\s*COPPER|INNER2_COPPER|IN2_CU/.test(s)
-  ){
-    return ["innerCopper2","Inner Copper 2"];
+  const numericGerberExt=ext.match(/^G(\d{1,2})$/);
+  if(numericGerberExt){
+    const gNumber=Number(numericGerberExt[1]);
+
+    // Keep G2/G3 behaviour from the current viewer:
+    // G2 => Inner 1, G3 => Inner 2 ... G31 => Inner 30.
+    if(gNumber>=2 && gNumber<=31){
+      const innerNumber=gNumber-1;
+      return [`innerCopper${innerNumber}`,`Inner Copper ${innerNumber}`];
+    }
+  }
+
+  // Legacy L2/L3... style names, where the layer number is the
+  // physical copper layer number in the stack.
+  const legacyLayerMatch =
+    stem.match(/(?:^|[_\-.])L(\d{1,2})(?:[_\-.]|$)/) ||
+    s.match(/(?:^|[_\-.])L(\d{1,2})(?:[_\-.]|$)/);
+
+  if(legacyLayerMatch){
+    const physicalLayer=Number(legacyLayerMatch[1]);
+    const innerNumber=physicalLayer-1;
+    if(innerNumber>=1 && innerNumber<=30){
+      return [`innerCopper${innerNumber}`,`Inner Copper ${innerNumber}`];
+    }
   }
 
   if(
@@ -715,8 +752,6 @@ function classify(name, text){
 function layerInfo(layer){
   const map={
     topCopper:{name:"F.Cu",jp:"表面 銅箔"},
-    innerCopper1:{name:"In1.Cu",jp:"内層1 銅箔"},
-    innerCopper2:{name:"In2.Cu",jp:"内層2 銅箔"},
     bottomCopper:{name:"B.Cu",jp:"裏面 銅箔"},
     topMask:{name:"F.Mask",jp:"表面 レジスト"},
     bottomMask:{name:"B.Mask",jp:"裏面 レジスト"},
@@ -727,6 +762,13 @@ function layerInfo(layer){
     outline:{name:"Edge.Cuts",jp:"基板外形"},
     drill:{name:"Drill",jp:"穴あけ"}
   };
+
+  const innerMatch=layer.type.match(/^innerCopper(\d+)$/);
+  if(innerMatch){
+    const n=Number(innerMatch[1]);
+    return {name:`In${n}.Cu`,jp:`内層${n} 銅箔`};
+  }
+
   return map[layer.type] || {name:layer.label,jp:""};
 }
 
@@ -754,35 +796,102 @@ function hasBottomCopper(){
   return layers.some(l=>l.type==="bottomCopper" && l.ok);
 }
 
-function updateRoutingLayerButtons(){
-  const layerButtons=[
-    {selector:"#routeInner1Button",type:"innerCopper1",label:"配線 3層"},
-    {selector:"#routeInner2Button",type:"innerCopper2",label:"配線 4層"}
-  ];
+function createInnerRoutingButton(n){
+  const type=innerTypeFromNumber(n);
+  const button=document.createElement("button");
+  button.type="button";
+  button.role="menuitem";
 
-  for(const {selector,type,label} of layerButtons){
-    const button=$(selector);
-    if(!button) continue;
+  const available=layers.some(layer=>layer.type===type && layer.ok);
+  const label=innerDisplayName(n);
 
-    const available=layers.some(layer=>layer.type===type && layer.ok);
-    button.disabled=!available;
-    button.textContent=available ? label : `${label}（データなし）`;
-    button.title=available ? `${label}を表示` : `${label}のGerberデータが読み込まれていません`;
-  }
+  button.textContent=available
+    ? label
+    : `${label}（データなし）`;
+  button.disabled=!available;
+  button.title=available
+    ? `${label}を表示`
+    : `${label}のGerberデータが読み込まれていません`;
+
+  button.addEventListener("click",()=>{
+    visibleFilter(`copperInner${n}`);
+    closeRoutingMenu();
+  });
+
+  return button;
 }
 
-const INNER_COPPER_TYPES = ["innerCopper1","innerCopper2"];
+function updateRoutingLayerButtons(){
+  const menu=$("#innerRoutingMenuItems");
+  if(!menu)return;
+
+  menu.replaceChildren();
+
+  const wrap=document.createElement("div");
+  wrap.className="routing-submenu-wrap";
+
+  const toggle=document.createElement("button");
+  toggle.type="button";
+  toggle.className="routing-submenu-toggle";
+  toggle.setAttribute("aria-expanded","false");
+  toggle.textContent="3層以上";
+
+  const submenu=document.createElement("div");
+  submenu.id="innerRoutingMoreMenu";
+  submenu.className="routing-submenu";
+  submenu.setAttribute("role","menu");
+
+  // 内層1 = 物理3層目から、内層30 = 物理32層目まで。
+  for(let n=1;n<=MAX_INNER_COPPER_LAYERS;n++){
+    submenu.appendChild(createInnerRoutingButton(n));
+  }
+
+  toggle.addEventListener("click",event=>{
+    event.stopPropagation();
+    const open=!submenu.classList.contains("open");
+    submenu.classList.toggle("open",open);
+    toggle.setAttribute("aria-expanded",String(open));
+  });
+
+  wrap.append(toggle,submenu);
+  menu.appendChild(wrap);
+}
+
+const MAX_INNER_COPPER_LAYERS = 30;
+const INNER_COPPER_TYPES = Array.from(
+  {length:MAX_INNER_COPPER_LAYERS},
+  (_,i)=>`innerCopper${i+1}`
+);
+
+function isInnerCopperType(type){
+  return /^innerCopper(?:[1-9]|[12]\d|30)$/.test(type);
+}
 
 function isCopperLayerType(type){
-  return ["topCopper","bottomCopper",...INNER_COPPER_TYPES].includes(type);
+  return type==="topCopper" || type==="bottomCopper" || isInnerCopperType(type);
 }
 
 function copperLayerLabel(type){
   if(type==="topCopper") return "表面";
   if(type==="bottomCopper") return "裏面";
-  if(type==="innerCopper1") return "内層1";
-  if(type==="innerCopper2") return "内層2";
+  const m=type.match(/^innerCopper(\d+)$/);
+  if(m) return `内層${Number(m[1])}`;
   return "銅箔";
+}
+
+function innerNumberFromType(type){
+  const m=type.match(/^innerCopper(\d+)$/);
+  return m ? Number(m[1]) : null;
+}
+
+function innerTypeFromNumber(n){
+  return Number.isInteger(n) && n>=1 && n<=MAX_INNER_COPPER_LAYERS
+    ? `innerCopper${n}`
+    : null;
+}
+
+function innerDisplayName(n){
+  return `配線 ${n+2}層`;
 }
 
 function updateChecks(){
@@ -810,8 +919,13 @@ function cssColorFor(type, mode){
 
   // CAD/routing view.
   if(type==="topCopper") return "#ef3d3d";
-  if(type==="innerCopper1") return "#f08a24";
-  if(type==="innerCopper2") return "#9b59b6";
+
+  const innerNumber=innerNumberFromType(type);
+  if(innerNumber!==null){
+    const hue=(30 + (innerNumber-1)*29) % 360;
+    return `hsl(${hue} 72% 58%)`;
+  }
+
   if(type==="bottomCopper") return "#287fc2";
   if(type==="topSilk" || type==="bottomSilk") return "#e8edf1";
   if(type==="drill") return "#55d0ae";
@@ -825,8 +939,12 @@ function modeToRenderMode(){
   if(displayMode==="board" || displayMode==="front") return "board";
   if(displayMode==="back") return "back";
   if(displayMode==="copperTop") return "routingTop";
-  if(displayMode==="copperInner1") return "routingInner1";
-  if(displayMode==="copperInner2") return "routingInner2";
+
+  const innerMode=displayMode.match(/^copperInner(\d+)$/);
+  if(innerMode){
+    return `routingInner${Number(innerMode[1])}`;
+  }
+
   if(displayMode==="copperBottom") return "routingBottom";
   if(displayMode==="copper") return "routing";
   return "all";
@@ -980,11 +1098,12 @@ function layerAllowedInMode(layerType, mode){
   if(mode==="routingTop"){
     return ["topCopper","topSilk","drill"].includes(layerType);
   }
-  if(mode==="routingInner1"){
-    return ["innerCopper1","drill"].includes(layerType);
-  }
-  if(mode==="routingInner2"){
-    return ["innerCopper2","drill"].includes(layerType);
+  const innerRouting=mode.match(/^routingInner(\d+)$/);
+  if(innerRouting){
+    return [
+      `innerCopper${Number(innerRouting[1])}`,
+      "drill"
+    ].includes(layerType);
   }
   if(mode==="routingBottom"){
     return ["bottomCopper","bottomSilk","drill"].includes(layerType);
@@ -1024,15 +1143,13 @@ function colorForLayerMode(layer, mode){
     return "#999999";
   }
 
-  if(mode==="routingInner1"){
-    if(layer.type==="innerCopper1") return "#f08a24";
-    if(layer.type==="drill") return "#55d0ae";
-    if(layer.type==="outline") return "#e0c744";
-    return "#999999";
-  }
-
-  if(mode==="routingInner2"){
-    if(layer.type==="innerCopper2") return "#9b59b6";
+  const innerRouting=mode.match(/^routingInner(\d+)$/);
+  if(innerRouting){
+    const innerNumber=Number(innerRouting[1]);
+    if(layer.type===`innerCopper${innerNumber}`){
+      const hue=(30 + (innerNumber-1)*29) % 360;
+      return `hsl(${hue} 72% 58%)`;
+    }
     if(layer.type==="drill") return "#55d0ae";
     if(layer.type==="outline") return "#e0c744";
     return "#999999";
@@ -1048,8 +1165,11 @@ function colorForLayerMode(layer, mode){
 
   if(mode==="routing"){
     if(layer.type==="topCopper") return "#ef3d3d";
-    if(layer.type==="innerCopper1") return "#f08a24";
-    if(layer.type==="innerCopper2") return "#9b59b6";
+    const innerRoutingNumber=innerNumberFromType(layer.type);
+    if(innerRoutingNumber!==null){
+      const hue=(30 + (innerRoutingNumber-1)*29) % 360;
+      return `hsl(${hue} 72% 58%)`;
+    }
     if(layer.type==="bottomCopper") return "#287fc2";
     if(layer.type==="topSilk" || layer.type==="bottomSilk") return "#e9edf2";
     if(layer.type==="drill") return "#55d0ae";
@@ -1063,8 +1183,11 @@ function colorForLayerMode(layer, mode){
 
   // "all" / exact layer inspection.
   if(layer.type==="topCopper") return "#ef3d3d";
-  if(layer.type==="innerCopper1") return "#f08a24";
-  if(layer.type==="innerCopper2") return "#9b59b6";
+  const exactInnerNumber=innerNumberFromType(layer.type);
+  if(exactInnerNumber!==null){
+    const hue=(30 + (exactInnerNumber-1)*29) % 360;
+    return `hsl(${hue} 72% 58%)`;
+  }
   if(layer.type==="bottomCopper") return "#287fc2";
   if(layer.type==="topSilk" || layer.type==="bottomSilk") return "#f1f1f1";
   if(layer.type==="topMask") return "#42a854";
@@ -1139,11 +1262,11 @@ function loadLayerImage(layer, mode){
     mode==="board" ? ["topCopper","topSilk","drill"] :
     mode==="back" ? ["bottomCopper","bottomSilk","drill"] :
     mode==="routingTop" ? ["topCopper","topSilk","drill"] :
-    mode==="routingInner1" ? ["innerCopper1","drill"] :
-    mode==="routingInner2" ? ["innerCopper2","drill"] :
+    /^routingInner\d+$/.test(mode) ?
+      [`innerCopper${Number(mode.match(/^routingInner(\d+)$/)[1])}`,"drill"] :
     mode==="routingBottom" ? ["bottomCopper","bottomSilk","drill"] :
     mode==="routing" ? [
-      "topCopper","innerCopper1","innerCopper2","bottomCopper",
+      "topCopper",...INNER_COPPER_TYPES,"bottomCopper",
       "topSilk","bottomSilk",
       "drill"
     ] :
@@ -1489,14 +1612,10 @@ function visibleFilter(mode){
         "topCopper","drill"
       ].includes(layer.type);
 
-    }else if(mode==="copperInner1"){
+    }else if(/^copperInner\d+$/.test(mode)){
+      const innerNumber=Number(mode.match(/^copperInner(\d+)$/)[1]);
       layer.visible=[
-        "innerCopper1","drill"
-      ].includes(layer.type);
-
-    }else if(mode==="copperInner2"){
-      layer.visible=[
-        "innerCopper2","drill"
+        `innerCopper${innerNumber}`,"drill"
       ].includes(layer.type);
 
     }else if(mode==="copperBottom"){
@@ -1506,7 +1625,7 @@ function visibleFilter(mode){
 
     }else if(mode==="copper"){
       layer.visible=[
-        "topCopper","innerCopper1","innerCopper2","bottomCopper",
+        "topCopper",...INNER_COPPER_TYPES,"bottomCopper",
         "topSilk","bottomSilk",
         "drill"
       ].includes(layer.type);
@@ -1535,13 +1654,17 @@ function updateModeBadge(){
     board:"MODE: BOARD / TOP (PCB)",
     front:"MODE: BOARD / TOP (PCB)",
     back:"MODE: BOARD / BOTTOM (PCB)",
-    copper:"MODE: ROUTING / UP TO 4 LAYERS",
+    copper:"MODE: ROUTING / UP TO 32 LAYERS",
     copperTop:"MODE: ROUTING / TOP",
-    copperInner1:"MODE: ROUTING / INNER 1",
-    copperInner2:"MODE: ROUTING / INNER 2",
     copperBottom:"MODE: ROUTING / BOTTOM",
     all:"MODE: ALL LAYERS (GKO OFF)"
   };
+
+  if(/^copperInner\d+$/.test(displayMode)){
+    const n=Number(displayMode.match(/^copperInner(\d+)$/)[1]);
+    el.textContent=`MODE: ROUTING / INNER ${n}`;
+    return;
+  }
 
   el.textContent=labels[displayMode]||"MODE: BOARD / TOP";
 }
@@ -1683,16 +1806,24 @@ setStatus("ZIPを展開中…");
       );
     }
 
-    const order=[
-      "bottomCopper","innerCopper2","innerCopper1","topCopper",
-      "bottomMask","topMask",
-      "bottomPaste","topPaste",
-      "bottomSilk","topSilk",
-      "outline","drill"
-    ];
-    next.sort((a,b)=>order.indexOf(a.type)-order.indexOf(b.type));
+    const layerOrderRank=(type)=>{
+      if(type==="bottomCopper") return 0;
+      const inner=innerNumberFromType(type);
+      if(inner!==null) return inner;
+      if(type==="topCopper") return MAX_INNER_COPPER_LAYERS+1;
+      if(type==="bottomMask") return MAX_INNER_COPPER_LAYERS+2;
+      if(type==="topMask") return MAX_INNER_COPPER_LAYERS+3;
+      if(type==="bottomPaste") return MAX_INNER_COPPER_LAYERS+4;
+      if(type==="topPaste") return MAX_INNER_COPPER_LAYERS+5;
+      if(type==="bottomSilk") return MAX_INNER_COPPER_LAYERS+6;
+      if(type==="topSilk") return MAX_INNER_COPPER_LAYERS+7;
+      if(type==="outline") return MAX_INNER_COPPER_LAYERS+8;
+      if(type==="drill") return MAX_INNER_COPPER_LAYERS+9;
+      return 999;
+    };
+    next.sort((a,b)=>layerOrderRank(a.type)-layerOrderRank(b.type));
 
-    setStatus(`${next.length}レイヤーをGerber / Excellonエンジンで解析中…`);
+    setStatus(`${next.length}レイヤーをGerber / Excellonエンジンで解析中…（最大32層対応）`);
     const failedLayers=[];
 
     for(let index=0;index<next.length;index++){
@@ -1730,7 +1861,7 @@ setStatus("ZIPを展開中…");
     fitView();
 
     setStatus(
-      `${layers.length}レイヤーを読み込みました（表面表示）`
+      `${layers.length}レイヤーを読み込みました（最大32層対応 / 表面表示）`
     );
   }catch(err){
     console.error(err);
@@ -1908,23 +2039,30 @@ $("#copperButton").addEventListener("click",()=>visibleFilter("copper"));
 const routingMenuButton=$("#routingMenuButton");
 const routingMenu=$("#routingMenu");
 const routingMenuArrow=routingMenuButton.querySelector(".routing-menu-arrow");
-updateRoutingLayerButtons();
 const closeRoutingMenu=()=>{
   routingMenu.classList.remove("open");
   routingMenuButton.setAttribute("aria-expanded","false");
   routingMenuArrow.textContent="▶";
+
+  const moreMenu=$("#innerRoutingMoreMenu");
+  const moreButton=$(".routing-submenu-toggle");
+  if(moreMenu) moreMenu.classList.remove("open");
+  if(moreButton) moreButton.setAttribute("aria-expanded","false");
 };
+updateRoutingLayerButtons();
 routingMenuButton.addEventListener("click",()=>{
   const open=!routingMenu.classList.contains("open");
   routingMenu.classList.toggle("open",open);
   routingMenuButton.setAttribute("aria-expanded",String(open));
   routingMenuArrow.textContent=open ? "▼" : "▶";
 });
-[["#routeTopButton","copperTop"],["#routeInner1Button","copperInner1"],["#routeInner2Button","copperInner2"],["#routeBottomButton","copperBottom"]]
-  .forEach(([selector,mode])=>$(selector).addEventListener("click",()=>{
-    visibleFilter(mode);
-    closeRoutingMenu();
-  }));
+[
+  ["#routeTopButton","copperTop"],
+  ["#routeBottomButton","copperBottom"]
+].forEach(([selector,mode])=>$(selector).addEventListener("click",()=>{
+  visibleFilter(mode);
+  closeRoutingMenu();
+}));
 document.addEventListener("click",event=>{
   if(!event.target.closest(".routing-controls")) closeRoutingMenu();
 });
